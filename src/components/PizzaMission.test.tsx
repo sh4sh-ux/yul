@@ -13,6 +13,11 @@ const clearDatabase = async () => {
   await resetDatabaseConnectionForTests()
 }
 
+const selectSlices = async (user: ReturnType<typeof userEvent.setup>, count: number) => {
+  const slices = screen.getAllByRole('button', { name: /피자 조각 \d/ })
+  for (const slice of slices.slice(0, count)) await user.click(slice)
+}
+
 describe('PizzaMission', () => {
   beforeEach(clearDatabase)
   afterEach(clearDatabase)
@@ -21,13 +26,11 @@ describe('PizzaMission', () => {
     const user = userEvent.setup()
     const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: 'medium' as const }
     render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
-    await user.click(screen.getByRole('button', { name: '1' }))
-    await user.click(screen.getByRole('button', { name: '2' }))
-    await user.click(screen.getByRole('button', { name: '3' }))
+    await selectSlices(user, 3)
     await user.click(screen.getByRole('button', { name: '정답 확인' }))
     expect(await screen.findByText('정확해요!')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /다음 문제/ }))
-    expect(screen.getByRole('heading', { name: '1/4 피자와 2/4 피자를 합치면 얼마일까요?' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '주문을 한 판에 합쳐서 준비해 주세요.' })).toBeInTheDocument()
   })
 
   it('preserves per-profile completion and score when replaying', async () => {
@@ -47,10 +50,10 @@ describe('PizzaMission', () => {
     const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: 'medium' as const, xp: 30 }
     render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={3} initialTotal={3} wasCompleted onExit={vi.fn()} onComplete={onComplete} onDataChanged={vi.fn()} />)
 
-    await user.click(screen.getByRole('button', { name: '1' })); await user.click(screen.getByRole('button', { name: '2' })); await user.click(screen.getByRole('button', { name: '3' }))
+    await selectSlices(user, 3)
     await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
-    await user.click(screen.getByRole('button', { name: '3/4' })); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
-    await user.click(screen.getByRole('button', { name: '3/4' })); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
+    await selectSlices(user, 3); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
+    await selectSlices(user, 4); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /미션 완료/ }))
 
     expect(onComplete).toHaveBeenCalledWith(expect.any(Array), false)
     expect(profile.xp).toBe(30)
@@ -61,8 +64,48 @@ describe('PizzaMission', () => {
     const user = userEvent.setup()
     const profile = { ...defaultProfiles()[0], year: 8 as const, difficulty: 'challenge' as const }
     render(<PizzaMission profile={profile} history={[]} initialStep={2} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
-    await user.click(screen.getByRole('button', { name: '5/6' }))
+    await selectSlices(user, 5)
     await user.click(screen.getByRole('button', { name: '정답 확인' }))
-    await waitFor(async () => expect((await getAnswers('gayul'))[0]?.questionId).toBe('unlike-denominator-challenge'))
+    await waitFor(async () => expect((await getAnswers('gayul'))[0]?.questionId).toBe('pizza-v11-challenge-2-3-plus-1-6'))
+  })
+
+  it('shows one language and reveals translated help only on request', async () => {
+    const user = userEvent.setup()
+    const profile = { ...defaultProfiles()[0], year: 5 as const, language: 'en' as const, difficulty: 'medium' as const }
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    expect(screen.getByRole('heading', { name: 'Select 3 of 4 pizza slices to make 3/4.' })).toBeInTheDocument()
+    expect(screen.queryByText('피자 4조각 중 3조각을 골라 3/4을 만들어 보세요.')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Translation help/ }))
+    expect(screen.getByText('피자 4조각 중 3조각을 골라 3/4을 만들어 보세요.')).toBeInTheDocument()
+  })
+
+  it('shows supportive feedback and progressive hints after a wrong answer', async () => {
+    const user = userEvent.setup()
+    const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: 'medium' as const }
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    await selectSlices(user, 1)
+    await user.click(screen.getByRole('button', { name: '정답 확인' }))
+    expect(await screen.findByText('괜찮아요, 다시 살펴봐요.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    await user.click(screen.getByRole('button', { name: /힌트/ }))
+    expect(screen.getByText(/아래 숫자 4는 전체 조각 수/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /다음 힌트/ }))
+    expect(screen.getByText(/위 숫자 3만큼/)).toBeInTheDocument()
+  })
+
+  it('restores the saved stage after remounting', () => {
+    const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: 'medium' as const }
+    render(<PizzaMission profile={profile} history={[]} initialStep={1} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    expect(screen.getByText('2단계 · 해결')).toBeInTheDocument()
+    expect(screen.getByText('1/4 + 2/4 = ?')).toBeInTheDocument()
+  })
+
+  it('stores only one answer when the check action is triggered twice', async () => {
+    const user = userEvent.setup()
+    const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: 'medium' as const }
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    await selectSlices(user, 3)
+    await user.dblClick(screen.getByRole('button', { name: '정답 확인' }))
+    await waitFor(async () => expect(await getAnswers('gayul')).toHaveLength(1))
   })
 })

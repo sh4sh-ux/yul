@@ -1,5 +1,6 @@
 import type { AnswerRecord, Language, MissionProgressWithProfile, Profile } from '../types'
 import { t } from '../i18n'
+import { pizzaReviewPrompt } from '../pizzaProblems'
 
 const missions = [
   { id: 'pizza', icon: '🍕', key: 'pizzaTitle' as const, colour: 'coral', subject: '1 · FRACTIONS' },
@@ -30,6 +31,8 @@ export function UnavailableCard({ language, title, onBack }: { language: Languag
 export function ReviewScreen({ language, answers }: { language: Language; answers: AnswerRecord[] }) {
   const wrong = answers.filter((answer) => !answer.correct).slice().reverse()
   const questionText = (questionId: string) => {
+    const currentPrompt = pizzaReviewPrompt(questionId, language)
+    if (currentPrompt) return currentPrompt
     if (questionId === 'slices') return t(language, 'slicesPrompt')
     if (questionId === 'same-denominator') return t(language, 'question2')
     if (questionId === 'same-denominator-easy') return t(language, 'question3Easy')

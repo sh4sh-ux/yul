@@ -41,10 +41,14 @@ describe('YULI app flow', () => {
 
     await user.click(await screen.findByRole('button', { name: /피자 레스토랑/ }))
     await user.click(screen.getByRole('button', { name: /레스토랑 열기/ }))
-    await user.click(screen.getByRole('button', { name: '1' })); await user.click(screen.getByRole('button', { name: '2' })); await user.click(screen.getByRole('button', { name: '3' }))
+    const selectSlices = async (count: number) => {
+      const slices = screen.getAllByRole('button', { name: /피자 조각 \d/ })
+      for (const slice of slices.slice(0, count)) await user.click(slice)
+    }
+    await selectSlices(3)
     await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
-    await user.click(screen.getByRole('button', { name: '3/4' })); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
-    await user.click(screen.getByRole('button', { name: '3/4' })); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
+    await selectSlices(3); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
+    await selectSlices(4); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /미션 완료/ }))
 
     expect(await screen.findByRole('heading', { name: '레스토랑 미션 완료!' })).toBeInTheDocument()
     expect(screen.getByText('+0')).toBeInTheDocument()

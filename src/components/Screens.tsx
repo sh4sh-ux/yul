@@ -29,7 +29,14 @@ export function UnavailableCard({ language, title, onBack }: { language: Languag
 
 export function ReviewScreen({ language, answers }: { language: Language; answers: AnswerRecord[] }) {
   const wrong = answers.filter((answer) => !answer.correct).slice().reverse()
-  return <div className="page"><header className="page-header"><span className="eyebrow">REVIEW</span><h1>{t(language, 'reviewTitle')}</h1><p>{t(language, 'reviewBody')}</p></header>{wrong.length === 0 ? <div className="empty-card"><span className="big-icon">📖</span><p>{t(language, 'noReview')}</p></div> : <div className="review-list">{wrong.map((answer) => <article className="review-card" key={answer.id}><span>🍕</span><div><strong>{t(language, 'pizzaTitle')}</strong><p>{answer.questionId === 'slices' ? t(language, 'slicesPrompt') : answer.questionId === 'same-denominator' ? t(language, 'question2') : t(language, 'question3')}</p><small>{new Date(answer.answeredAt).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'en-NZ')}</small></div></article>)}</div>}</div>
+  const questionText = (questionId: string) => {
+    if (questionId === 'slices') return t(language, 'slicesPrompt')
+    if (questionId === 'same-denominator') return t(language, 'question2')
+    if (questionId === 'same-denominator-easy') return t(language, 'question3Easy')
+    if (questionId === 'unlike-denominator-challenge') return t(language, 'question3Challenge')
+    return t(language, 'question3')
+  }
+  return <div className="page"><header className="page-header"><span className="eyebrow">REVIEW</span><h1>{t(language, 'reviewTitle')}</h1><p>{t(language, 'reviewBody')}</p></header>{wrong.length === 0 ? <div className="empty-card"><span className="big-icon">📖</span><p>{t(language, 'noReview')}</p></div> : <div className="review-list">{wrong.map((answer) => <article className="review-card" key={answer.id}><span>🍕</span><div><strong>{t(language, 'pizzaTitle')}</strong><p>{questionText(answer.questionId)}</p><small>{new Date(answer.answeredAt).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'en-NZ')}</small></div></article>)}</div>}</div>
 }
 
 export function ProgressScreen({ profile, answers, progress }: { profile: Profile; answers: AnswerRecord[]; progress: MissionProgressWithProfile[] }) {

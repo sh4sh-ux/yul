@@ -52,7 +52,10 @@ export async function saveProfile(profile: Profile): Promise<void> {
 }
 
 export async function getProfiles(): Promise<Profile[]> { return (await db()).getAll('profiles') }
-export async function getAnswers(profileId: string): Promise<AnswerRecord[]> { return (await db()).getAllFromIndex('answers', 'by-profile', profileId) }
+export async function getAnswers(profileId: string): Promise<AnswerRecord[]> {
+  const answers = await (await db()).getAllFromIndex('answers', 'by-profile', profileId)
+  return answers.sort((a, b) => a.answeredAt.localeCompare(b.answeredAt))
+}
 export async function saveAnswer(answer: AnswerRecord): Promise<void> { await (await db()).put('answers', answer) }
 
 export async function getProgress(profileId: string): Promise<MissionProgressWithProfile[]> {
@@ -77,10 +80,17 @@ export async function createBackup(): Promise<AppBackup> {
 const isProfile = (value: unknown): value is Profile => {
   if (!value || typeof value !== 'object') return false
   const item = value as Record<string, unknown>
-  return (item.id === 'gayul' || item.id === 'hayul') && typeof item.name === 'string' && typeof item.avatar === 'string'
-    && (item.year === null || (typeof item.year === 'number' && item.year >= 1 && item.year <= 8))
+  const unitDifficulties = item.unitDifficulties
+  const validDifficulties = ['easy', 'medium', 'challenge', 'auto']
+  const validMissionIds = ['pizza', 'shopping', 'travel', 'nature', 'creator']
+  const validUnits = unitDifficulties !== null && typeof unitDifficulties === 'object' && !Array.isArray(unitDifficulties)
+    && Object.entries(unitDifficulties).every(([missionId, difficulty]) => validMissionIds.includes(missionId) && validDifficulties.includes(String(difficulty)))
+  return (item.id === 'gayul' || item.id === 'hayul') && typeof item.name === 'string' && item.name.length > 0 && typeof item.avatar === 'string'
+    && (item.year === null || (typeof item.year === 'number' && Number.isInteger(item.year) && item.year >= 1 && item.year <= 8))
     && (item.language === 'ko' || item.language === 'en')
-    && ['easy', 'medium', 'challenge', 'auto'].includes(String(item.difficulty)) && typeof item.xp === 'number'
+    && validDifficulties.includes(String(item.difficulty)) && validUnits
+    && typeof item.xp === 'number' && Number.isFinite(item.xp) && item.xp >= 0
+    && typeof item.createdAt === 'string' && typeof item.updatedAt === 'string'
 }
 
 export function validateBackup(value: unknown): value is AppBackup {

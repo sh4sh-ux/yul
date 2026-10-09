@@ -11,8 +11,8 @@ export function MissionIntro({ profile, onBack, onBegin }: { profile: Profile; o
 
 const choices = ['1/4', '2/4', '3/4', '1']
 
-export function PizzaMission({ profile, history, initialStep, wasCompleted, onExit, onComplete, onDataChanged }: {
-  profile: Profile; history: AnswerRecord[]; initialStep: number; wasCompleted: boolean; onExit: () => void; onComplete: (attempts: AnswerRecord[]) => void; onDataChanged: () => void
+export function PizzaMission({ profile, history, initialStep, initialScore, initialTotal, wasCompleted, onExit, onComplete, onDataChanged }: {
+  profile: Profile; history: AnswerRecord[]; initialStep: number; initialScore: number; initialTotal: number; wasCompleted: boolean; onExit: () => void; onComplete: (attempts: AnswerRecord[], isFirstCompletion: boolean) => void; onDataChanged: () => void
 }) {
   const language = profile.language
   const [step, setStep] = useState(Math.min(initialStep, 2))
@@ -26,7 +26,15 @@ export function PizzaMission({ profile, history, initialStep, wasCompleted, onEx
   const configuredDifficulty = profile.unitDifficulties.pizza ?? profile.difficulty
   const effectiveDifficulty = configuredDifficulty === 'auto' ? suggestedDifficulty(history.filter((item) => item.missionId === 'pizza')) : configuredDifficulty
   const questionKey = step === 0 ? 'slicesPrompt' : step === 1 ? 'question2' : effectiveDifficulty === 'easy' ? 'question3Easy' : effectiveDifficulty === 'challenge' ? 'question3Challenge' : 'question3'
-  const questionId = step === 0 ? 'slices' : step === 1 ? 'same-denominator' : 'unlike-denominator'
+  const questionId = step === 0
+    ? 'slices'
+    : step === 1
+      ? 'same-denominator'
+      : effectiveDifficulty === 'easy'
+        ? 'same-denominator-easy'
+        : effectiveDifficulty === 'challenge'
+          ? 'unlike-denominator-challenge'
+          : 'unlike-denominator-medium'
   const selectedCount = slices.filter(Boolean).length
   const currentAnswer = step === 0 ? `${selectedCount}/4` : answer
   const explanationKey = effectiveDifficulty === 'easy' ? 'explanation3Easy' : effectiveDifficulty === 'challenge' ? 'explanation3Challenge' : 'explanation3'
@@ -39,7 +47,17 @@ export function PizzaMission({ profile, history, initialStep, wasCompleted, onEx
     return fraction ? fractionsEqual(fraction, target) : false
   }, [step, selectedCount, answer, effectiveDifficulty])
 
-  useEffect(() => { void saveProgress({ profileId: profile.id, missionId: 'pizza', completed: false, currentStep: step, score: 0, total: 3, updatedAt: new Date().toISOString() }) }, [profile.id, step])
+  useEffect(() => {
+    void saveProgress({
+      profileId: profile.id,
+      missionId: 'pizza',
+      completed: wasCompleted,
+      currentStep: step,
+      score: wasCompleted ? initialScore : 0,
+      total: wasCompleted ? initialTotal : 3,
+      updatedAt: new Date().toISOString(),
+    })
+  }, [profile.id, step, wasCompleted, initialScore, initialTotal])
 
   const check = async () => {
     const record: AnswerRecord = { id: crypto.randomUUID(), profileId: profile.id, missionId: 'pizza', questionId, correct, hintsUsed: hintOpen ? 1 : 0, answeredAt: new Date().toISOString(), answer: currentAnswer }
@@ -47,8 +65,8 @@ export function PizzaMission({ profile, history, initialStep, wasCompleted, onEx
   }
   const advance = async () => {
     if (step < 2) { setStep(step + 1); setAnswer(''); setFeedback(null); setHintOpen(false); setTranslation(false); return }
-    await saveProgress({ profileId: profile.id, missionId: 'pizza', completed: true, currentStep: 3, score: attempts.filter((item) => item.correct).length + 1, total: attempts.length + 1, updatedAt: new Date().toISOString() })
-    onComplete(attempts)
+    await saveProgress({ profileId: profile.id, missionId: 'pizza', completed: true, currentStep: 3, score: attempts.filter((item) => item.correct).length, total: attempts.length, updatedAt: new Date().toISOString() })
+    onComplete(attempts, !wasCompleted)
   }
   const retry = () => { setFeedback(null); if (step === 0) setSlices([false, false, false, false]); else setAnswer('') }
 
@@ -62,9 +80,9 @@ export function PizzaMission({ profile, history, initialStep, wasCompleted, onEx
   </div>
 }
 
-export function MissionResult({ profile, attempts, onMap, onAgain }: { profile: Profile; attempts: AnswerRecord[]; onMap: () => void; onAgain: () => void }) {
+export function MissionResult({ profile, attempts, xpEarned, onMap, onAgain }: { profile: Profile; attempts: AnswerRecord[]; xpEarned: number; onMap: () => void; onAgain: () => void }) {
   const language = profile.language
   const correct = attempts.filter((item) => item.correct).length
   const hints = attempts.reduce((sum, item) => sum + item.hintsUsed, 0)
-  return <div className="mission-shell result-screen"><div className="confetti">★ <span>●</span> ★</div><div className="result-medal">🍕<i>✓</i></div><span className="eyebrow">MISSION COMPLETE</span><h1>{t(language, 'resultTitle')}</h1><p>{t(language, 'resultBody')}</p><div className="result-stats"><div><strong>{attempts.length ? Math.round(correct / attempts.length * 100) : 100}%</strong><small>{t(language, 'accuracy')}</small></div><div><strong>{hints}</strong><small>{t(language, 'hints')}</small></div><div><strong>+30</strong><small>{t(language, 'earned')}</small></div></div><button className="button primary full" onClick={onMap}>{t(language, 'finish')}</button><button className="button ghost full" onClick={onAgain}>{t(language, 'tryAgain')}</button></div>
+  return <div className="mission-shell result-screen"><div className="confetti">★ <span>●</span> ★</div><div className="result-medal">🍕<i>✓</i></div><span className="eyebrow">MISSION COMPLETE</span><h1>{t(language, 'resultTitle')}</h1><p>{t(language, 'resultBody')}</p><div className="result-stats"><div><strong>{attempts.length ? Math.round(correct / attempts.length * 100) : 100}%</strong><small>{t(language, 'accuracy')}</small></div><div><strong>{hints}</strong><small>{t(language, 'hints')}</small></div><div><strong>+{xpEarned}</strong><small>{t(language, 'earned')}</small></div></div><button className="button primary full" onClick={onMap}>{t(language, 'finish')}</button><button className="button ghost full" onClick={onAgain}>{t(language, 'tryAgain')}</button></div>
 }

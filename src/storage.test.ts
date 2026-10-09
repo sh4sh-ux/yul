@@ -26,6 +26,13 @@ describe('IndexedDB learning repository', () => {
     expect(await getAnswers('gayul')).toHaveLength(1)
     expect(await getAnswers('hayul')).toHaveLength(0)
   })
+  it('returns each profile answer history in chronological order', async () => {
+    await initialiseProfiles()
+    await saveAnswer({ id: 'a-first-key', profileId: 'gayul', missionId: 'pizza', questionId: 'newer', correct: true, hintsUsed: 0, answeredAt: '2026-01-03T00:00:00.000Z', answer: '3/4' })
+    await saveAnswer({ id: 'z-last-key', profileId: 'gayul', missionId: 'pizza', questionId: 'older', correct: false, hintsUsed: 1, answeredAt: '2026-01-01T00:00:00.000Z', answer: '1/4' })
+    await saveAnswer({ id: 'middle-key', profileId: 'hayul', missionId: 'pizza', questionId: 'other-profile', correct: true, hintsUsed: 0, answeredAt: '2025-01-01T00:00:00.000Z', answer: '3/4' })
+    expect((await getAnswers('gayul')).map((answer) => answer.questionId)).toEqual(['older', 'newer'])
+  })
   it('exports and restores a validated backup', async () => {
     await initialiseProfiles()
     const backup = await createBackup()
@@ -37,6 +44,15 @@ describe('IndexedDB learning repository', () => {
     await initialiseProfiles()
     const before = await getProfiles()
     await expect(restoreBackup({ schema: 'wrong' })).rejects.toThrow()
+    expect(await getProfiles()).toEqual(before)
+  })
+  it('rejects profiles missing required unit difficulty data before restore', async () => {
+    await initialiseProfiles()
+    const before = await getProfiles()
+    const backup = await createBackup()
+    const malformed = { ...backup, profiles: backup.profiles.map((profile, index) => index === 0 ? { ...profile, unitDifficulties: undefined } : profile) }
+    expect(validateBackup(malformed)).toBe(false)
+    await expect(restoreBackup(malformed)).rejects.toThrow()
     expect(await getProfiles()).toEqual(before)
   })
 })

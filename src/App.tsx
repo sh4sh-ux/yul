@@ -21,7 +21,7 @@ export default function App() {
   const [progress, setProgress] = useState<MissionProgressWithProfile[]>([])
   const [unavailable, setUnavailable] = useState('')
   const [loading, setLoading] = useState(true)
-  const [resultAttempts, setResultAttempts] = useState<AnswerRecord[] | null>(null)
+  const [result, setResult] = useState<{ attempts: AnswerRecord[]; xpEarned: number } | null>(null)
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null
   const pizzaProgress = progress.find((item) => item.missionId === 'pizza')
 
@@ -57,11 +57,11 @@ export default function App() {
     if (selectedId === profile.id || profile.year !== null) { setSelectedId(profile.id); await setSelectedProfile(profile.id); await refreshData(profile.id); setScreen('home') }
   }
   const updateSelected = async (profile: Profile) => { await saveProfile(profile); setProfiles((items) => items.map((item) => item.id === profile.id ? profile : item)) }
-  const switchProfile = async () => { await setSelectedProfile(null); setSelectedId(null); setScreen('profiles'); setUnavailable(''); setResultAttempts(null) }
-  const completeMission = async (runAttempts: AnswerRecord[]) => {
+  const switchProfile = async () => { await setSelectedProfile(null); setSelectedId(null); setScreen('profiles'); setUnavailable(''); setResult(null) }
+  const completeMission = async (runAttempts: AnswerRecord[], isFirstCompletion: boolean) => {
     if (!selected) return
-    if (!pizzaProgress?.completed) await updateSelected({ ...selected, xp: selected.xp + 30 })
-    await refreshData(selected.id); setResultAttempts(runAttempts)
+    if (isFirstCompletion) await updateSelected({ ...selected, xp: selected.xp + 30 })
+    await refreshData(selected.id); setResult({ attempts: runAttempts, xpEarned: isFirstCompletion ? 30 : 0 })
   }
   const restored = async () => {
     const restoredProfiles = await initialiseProfiles(); setProfiles(restoredProfiles)
@@ -71,9 +71,9 @@ export default function App() {
 
   if (loading) return <div className="loading"><img src={`${import.meta.env.BASE_URL}logo-placeholder.svg`} alt="YULI" /><span /></div>
   if (!selected) return <><ProfilePicker profiles={profiles} language={pickerLanguage} onLanguage={setPickerLanguage} onSelect={chooseProfile} onEdit={(profile) => { setEditor(profile); setEditorRequired(profile.year === null) }} />{editor && <ProfileEditor profile={editor} language={pickerLanguage} required={editorRequired} onSave={commitProfile} onCancel={() => setEditor(null)} />}</>
-  if (resultAttempts) return <MissionResult profile={selected} attempts={resultAttempts} onMap={() => { setResultAttempts(null); setScreen('map') }} onAgain={() => { setResultAttempts(null); setScreen('mission') }} />
+  if (result) return <MissionResult profile={selected} attempts={result.attempts} xpEarned={result.xpEarned} onMap={() => { setResult(null); setScreen('map') }} onAgain={() => { setResult(null); setScreen('mission') }} />
   if (screen === 'mission-intro') return <MissionIntro profile={selected} onBack={() => setScreen('map')} onBegin={() => setScreen('mission')} />
-  if (screen === 'mission') return <PizzaMission profile={selected} history={answers} initialStep={pizzaProgress?.completed ? 0 : pizzaProgress?.currentStep ?? 0} wasCompleted={pizzaProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={completeMission} onDataChanged={() => refreshData(selected.id)} />
+  if (screen === 'mission') return <PizzaMission profile={selected} history={answers} initialStep={pizzaProgress?.completed ? 0 : pizzaProgress?.currentStep ?? 0} initialScore={pizzaProgress?.score ?? 0} initialTotal={pizzaProgress?.total ?? 3} wasCompleted={pizzaProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={completeMission} onDataChanged={() => refreshData(selected.id)} />
 
   return <AppShell profile={selected} screen={screen} onNavigate={(next) => { setUnavailable(''); setScreen(next) }} onSettings={() => setScreen('settings')}>
     {screen === 'home' && <HomeScreen profile={selected} pizzaProgress={pizzaProgress} onMission={() => setScreen('mission-intro')} onMap={() => setScreen('map')} />}

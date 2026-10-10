@@ -82,7 +82,15 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
     await saveProgress({ profileId: profile.id, missionId: 'pizza', completed: true, currentStep: 3, score: attempts.filter((item) => item.correct).length, total: attempts.length, updatedAt: new Date().toISOString() })
     onComplete(attempts, !wasCompleted)
   }
-  const retry = () => { if (!usingSupport) setUsingSupport(true); setSelected(new Set()); setHintLevel((level) => Math.max(1, level)); setFeedback(null); submissionLocked.current = false }
+  const retry = () => {
+    if (!usingSupport) {
+      setUsingSupport(true)
+      setHintLevel(1)
+    }
+    setSelected(new Set())
+    setFeedback(null)
+    submissionLocked.current = false
+  }
 
   return <div className="mission-shell learning-screen"><header className="mission-header"><button className="icon-button" onClick={onExit} aria-label={t(language, 'back')}>×</button><div className="step-track"><span style={{ width: `${(step + 1) / 3 * 100}%` }} /></div><strong>{step + 1}/3</strong></header>
     <main className="learning-main pizza-learning-main">

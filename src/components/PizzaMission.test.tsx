@@ -112,12 +112,19 @@ describe('PizzaMission', () => {
     const baseQuestion = buildPizzaQuestions(profile, [])[0]
     render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
 
+    await user.click(screen.getByRole('button', { name: language === 'ko' ? /힌트/ : /Hint/ }))
+    expect(screen.getByText(localise(baseQuestion.hints[0], language))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: language === 'ko' ? /다음 힌트/ : /Next hint/ }))
+    expect(screen.getByText(localise(baseQuestion.hints[1], language))).toBeInTheDocument()
     await selectSlices(user, 1)
     await user.click(screen.getByRole('button', { name: language === 'ko' ? '정답 확인' : 'Check answer' }))
+    await waitFor(async () => expect((await getAnswers('gayul'))[0]).toMatchObject({ hintsUsed: 2, supportAttempt: false }))
     await user.click(await screen.findByRole('button', { name: language === 'ko' ? '유사 문제로 연습' : 'Try a similar problem' }))
 
     expect(screen.getByText(localise(baseQuestion.support.hints[0], language))).toBeInTheDocument()
     expect(screen.queryByText(localise(baseQuestion.hints[0], language))).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: language === 'ko' ? /다음 힌트/ : /Next hint/ }))
+    expect(screen.getByText(localise(baseQuestion.support.hints[1], language))).toBeInTheDocument()
     await selectSlices(user, baseQuestion.support.target.numerator)
     await user.click(screen.getByRole('button', { name: language === 'ko' ? '정답 확인' : 'Check answer' }))
     expect(await screen.findByText(localise(baseQuestion.support.explanation, language))).toBeInTheDocument()

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createBackup, getAnswers, getProfiles, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, restoreBackup, saveAnswer, saveProfile, saveProgress, validateBackup } from './storage'
+import { completeMissionWithReward, createBackup, getAnswers, getProfiles, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, restoreBackup, saveAnswer, saveProfile, saveProgress, validateBackup } from './storage'
 
 const clearDatabase = async () => {
   await resetDatabaseConnectionForTests()
@@ -51,6 +51,40 @@ describe('IndexedDB learning repository', () => {
     expect((await getAnswers('gayul'))[0]).toMatchObject({ missionId: 'shopping', profileId: 'gayul' })
     expect((await getProgress('gayul'))[0]).toMatchObject({ missionId: 'shopping', missionState: { cart: { milk: 2 }, hintLevel: 1, attemptIds: ['shop-a1'], supportAttempt: true, runActive: true } })
     expect(await getAnswers('hayul')).toHaveLength(0)
+  })
+  it('round-trips a pending successful payment while accepting older backups without it', async () => {
+    await initialiseProfiles()
+    await saveProgress({ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 1, score: 1, total: 1, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, attemptIds: ['paid-1'], runActive: true, paymentComplete: true } })
+    const backup = await createBackup()
+    expect(validateBackup(backup)).toBe(true)
+    await restoreBackup(backup)
+    expect((await getProgress('gayul'))[0].missionState?.paymentComplete).toBe(true)
+
+    const legacy = { ...backup, progress: backup.progress.map(({ missionState, ...progress }) => ({ ...progress, missionState: missionState && { ...missionState, paymentComplete: undefined } })) }
+    expect(validateBackup(legacy)).toBe(true)
+  })
+  it('atomically grants 40 XP only for the first shopping completion and keeps profiles independent', async () => {
+    await initialiseProfiles()
+    const completion = { profileId: 'gayul', missionId: 'shopping' as const, completed: true, currentStep: 3, score: 3, total: 4, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { runActive: false } }
+    const first = await completeMissionWithReward(completion, 40)
+    const replay = await completeMissionWithReward({ ...completion, score: 1, total: 2 }, 40)
+
+    expect(first.xpEarned).toBe(40)
+    expect(replay.xpEarned).toBe(0)
+    expect((await getProfiles()).find((profile) => profile.id === 'gayul')?.xp).toBe(40)
+    expect((await getProfiles()).find((profile) => profile.id === 'hayul')?.xp).toBe(0)
+    expect((await getProgress('gayul'))[0]).toMatchObject({ completed: true, score: 3, total: 4 })
+  })
+  it('rolls back XP and completion together when a completion write fails', async () => {
+    await initialiseProfiles()
+    const invalidState = { runActive: false, uncloneable: () => undefined }
+    await expect(completeMissionWithReward({
+      profileId: 'gayul', missionId: 'shopping', completed: true, currentStep: 3, score: 3, total: 3,
+      updatedAt: '2026-10-10T00:00:00.000Z', missionState: invalidState,
+    } as never, 40)).rejects.toThrow()
+
+    expect((await getProfiles()).find((profile) => profile.id === 'gayul')?.xp).toBe(0)
+    expect(await getProgress('gayul')).toHaveLength(0)
   })
   it('rejects malformed resumable shopping state before restore', async () => {
     await initialiseProfiles()

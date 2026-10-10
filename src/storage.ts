@@ -72,6 +72,52 @@ export async function saveAnswerAndProgress(answer: AnswerRecord, progress: Miss
   await transaction.done
 }
 
+/**
+ * Marks a mission complete and grants its one-time reward in the same
+ * transaction. A replay can update UI state without ever granting XP twice.
+ */
+export async function completeMissionWithReward(progress: MissionProgressWithProfile, reward: number): Promise<{
+  progress: MissionProgressWithProfile
+  profile: Profile
+  xpEarned: number
+}> {
+  const store = await db()
+  const transaction = store.transaction(['profiles', 'progress'], 'readwrite')
+  const profiles = transaction.objectStore('profiles')
+  const missionProgress = transaction.objectStore('progress')
+  let profileWrite: ReturnType<typeof profiles.put> | undefined
+  try {
+    const profile = await profiles.get(progress.profileId)
+    if (!profile) throw new Error(`Profile not found: ${progress.profileId}`)
+    const key = `${progress.profileId}:${progress.missionId}`
+    const existing = await missionProgress.get(key)
+    const isFirstCompletion = !existing?.completed
+    const completedProgress = {
+      ...progress,
+      completed: true,
+      score: isFirstCompletion ? progress.score : existing.score,
+      total: isFirstCompletion ? progress.total : existing.total,
+      key,
+    } as MissionProgressWithProfile
+    const updatedProfile = isFirstCompletion
+      ? { ...profile, xp: profile.xp + reward, updatedAt: now() }
+      : profile
+
+    // Start the profile write first so any later structured-clone/storage error
+    // also proves that IndexedDB rolls the reward back with the progress write.
+    profileWrite = profiles.put(updatedProfile)
+    const progressWrite = missionProgress.put(completedProgress)
+    await Promise.all([profileWrite, progressWrite])
+    await transaction.done
+    return { progress: completedProgress, profile: updatedProfile, xpEarned: isFirstCompletion ? reward : 0 }
+  } catch (error) {
+    try { transaction.abort() } catch { /* Transaction may already be aborted. */ }
+    if (profileWrite) await Promise.allSettled([profileWrite])
+    try { await transaction.done } catch { /* Preserve the original failure. */ }
+    throw error
+  }
+}
+
 export async function getProgress(profileId: string): Promise<MissionProgressWithProfile[]> {
   return (await db()).getAllFromIndex('progress', 'by-profile', profileId)
 }
@@ -136,7 +182,8 @@ export function validateBackup(value: unknown): value is AppBackup {
         && state.attemptIds.every((id) => typeof id === 'string' && id.length > 0) && new Set(state.attemptIds).size === state.attemptIds.length)
       const validSupport = state.supportAttempt === undefined || typeof state.supportAttempt === 'boolean'
       const validRun = state.runActive === undefined || typeof state.runActive === 'boolean'
-      return validHint && validCart && validAttempts && validSupport && validRun
+      const validPayment = state.paymentComplete === undefined || typeof state.paymentComplete === 'boolean'
+      return validHint && validCart && validAttempts && validSupport && validRun && validPayment
     })
 }
 

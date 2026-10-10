@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildShoppingQuestions, shoppingLocalise } from '../shoppingProblems'
-import { defaultProfiles, getAnswers, getProgress, resetDatabaseConnectionForTests, saveProgress } from '../storage'
+import { completeMissionWithReward, defaultProfiles, getAnswers, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, saveProgress } from '../storage'
 import type { Language, MathLevel } from '../types'
 import { ShoppingMission } from './ShoppingMission'
 
@@ -134,6 +134,38 @@ describe('ShoppingMission', () => {
     expect(within(restoredCard as HTMLElement).getByText('2')).toBeInTheDocument()
   })
 
+  it('restores a successful payment and advances without storing the same answer twice', async () => {
+    const user = userEvent.setup()
+    const first = render(<ShoppingMission {...mission()} />)
+    await add(user, /사과 추가/, 2)
+    await add(user, /우유 추가/)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    expect(await screen.findByText('결제 성공!')).toBeInTheDocument()
+    await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({
+      currentStep: 0, score: 1, total: 1, missionState: { paymentComplete: true, runActive: true },
+    }))
+    first.unmount()
+
+    const saved = (await getProgress('gayul'))[0]
+    const history = await getAnswers('gayul')
+    render(<ShoppingMission {...mission({
+      history, initialStep: saved.currentStep, initialScore: saved.score, initialTotal: saved.total,
+      initialCart: saved.missionState?.cart, initialHintLevel: saved.missionState?.hintLevel,
+      initialAttemptIds: saved.missionState?.attemptIds, initialSupportAttempt: saved.missionState?.supportAttempt,
+      initialPaymentComplete: saved.missionState?.paymentComplete,
+    })} />)
+
+    expect(screen.getByText('결제 성공!')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'YULI 영수증' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '계산대에서 결제' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /다음 쇼핑/ }))
+    expect(screen.getByRole('heading', { name: shoppingLocalise(buildShoppingQuestions(profileFor(), [])[1].prompt, 'ko') })).toBeInTheDocument()
+    await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({
+      currentStep: 1, score: 1, total: 1, missionState: { paymentComplete: false, runActive: true },
+    }))
+    expect(await getAnswers('gayul')).toHaveLength(1)
+  })
+
   it('restores only the active run attempts and reports exact final aggregates', async () => {
     const user = userEvent.setup()
     const first = render(<ShoppingMission {...mission()} />)
@@ -152,7 +184,14 @@ describe('ShoppingMission', () => {
     const progress = (await getProgress('gayul'))[0]
     const currentRun = await getAnswers('gayul')
     const oldSession = { ...currentRun[0], id: 'old-session-answer', correct: true, hintsUsed: 2, supportAttempt: false }
-    const onComplete = vi.fn()
+    await initialiseProfiles()
+    const onComplete = vi.fn(async (runAttempts: Array<{ correct: boolean }>) => {
+      await completeMissionWithReward({
+        profileId: 'gayul', missionId: 'shopping', completed: true, currentStep: 3,
+        score: runAttempts.filter((attempt) => attempt.correct).length, total: runAttempts.length,
+        updatedAt: new Date().toISOString(), missionState: { runActive: false, attemptIds: [] },
+      }, 40)
+    })
     render(<ShoppingMission {...mission({
       history: [oldSession, ...currentRun], initialStep: progress.currentStep, initialScore: progress.score,
       initialTotal: progress.total, initialCart: progress.missionState?.cart, initialHintLevel: progress.missionState?.hintLevel,

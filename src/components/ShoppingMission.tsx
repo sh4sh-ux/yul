@@ -32,7 +32,7 @@ export function ShoppingIntro({ profile, onBack, onBegin }: { profile: Profile; 
   return <div className="mission-shell intro-screen shopping-intro"><button className="back-button" onClick={onBack}>← {c.back}</button><div className="intro-art shopping-intro-art"><span>🛒</span><i>★</i><i>NZ$</i></div><div className="intro-copy"><span className="eyebrow">{c.eyebrow}</span><h1>{c.title}</h1><p>{c.intro}</p><p className="educational-price-note">ⓘ {c.educational}</p><div className="mission-meta"><span>◷ {c.minutes}</span><span>★ {c.reward}</span></div><button className="button primary full" onClick={onBegin}>{c.begin} →</button></div></div>
 }
 
-export function ShoppingMission({ profile, history, initialStep, initialScore, initialTotal, initialCart, initialHintLevel, initialAttemptIds, initialSupportAttempt, wasCompleted, onExit, onComplete, onDataChanged }: {
+export function ShoppingMission({ profile, history, initialStep, initialScore, initialTotal, initialCart, initialHintLevel, initialAttemptIds, initialSupportAttempt, initialPaymentComplete, wasCompleted, onExit, onComplete, onDataChanged }: {
   profile: Profile
   history: AnswerRecord[]
   initialStep: number
@@ -42,9 +42,10 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   initialHintLevel?: number
   initialAttemptIds?: string[]
   initialSupportAttempt?: boolean
+  initialPaymentComplete?: boolean
   wasCompleted: boolean
   onExit: () => void
-  onComplete: (attempts: AnswerRecord[], isFirstCompletion: boolean) => void
+  onComplete: (attempts: AnswerRecord[], isFirstCompletion: boolean) => void | Promise<void>
   onDataChanged: () => void
 }) {
   const language = profile.language
@@ -52,7 +53,7 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   const [questions] = useState(() => buildShoppingQuestions(profile, history))
   const [step, setStep] = useState(Math.min(initialStep, 2))
   const [cart, setCart] = useState<Record<string, number>>(() => initialCart ?? {})
-  const [feedback, setFeedback] = useState<'correct' | 'incorrect' | 'over' | null>(null)
+  const [feedback, setFeedback] = useState<'correct' | 'incorrect' | 'over' | null>(() => initialPaymentComplete ? 'correct' : null)
   const [hintLevel, setHintLevel] = useState(Math.min(2, initialHintLevel ?? 0))
   const [translation, setTranslation] = useState(false)
   const [attempts, setAttempts] = useState<AnswerRecord[]>(() => {
@@ -61,7 +62,8 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   })
   const [supportAttempt, setSupportAttempt] = useState(initialSupportAttempt ?? false)
   const [submitting, setSubmitting] = useState(false)
-  const submissionLocked = useRef(false)
+  const submissionLocked = useRef(initialPaymentComplete ?? false)
+  const completionLocked = useRef(false)
   const question = questions[step]
   const totals = calculateCart(question, cart)
   const itemCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0)
@@ -72,9 +74,9 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
       profileId: profile.id, missionId: 'shopping', completed: wasCompleted, currentStep: step,
       score: wasCompleted ? initialScore : attempts.filter((attempt) => attempt.correct).length,
       total: wasCompleted ? initialTotal : attempts.length,
-      updatedAt: new Date().toISOString(), missionState: { cart, hintLevel, attemptIds: attempts.map((attempt) => attempt.id), supportAttempt, runActive: true },
+      updatedAt: new Date().toISOString(), missionState: { cart, hintLevel, attemptIds: attempts.map((attempt) => attempt.id), supportAttempt, runActive: true, paymentComplete: feedback === 'correct' },
     })
-  }, [profile.id, step, cart, hintLevel, attempts, supportAttempt, wasCompleted, initialScore, initialTotal])
+  }, [profile.id, step, cart, hintLevel, attempts, supportAttempt, feedback, wasCompleted, initialScore, initialTotal])
 
   const changeQuantity = (productId: string, delta: number) => {
     setCart((current) => {
@@ -104,7 +106,7 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
         profileId: profile.id, missionId: 'shopping', completed: wasCompleted, currentStep: step,
         score: wasCompleted ? initialScore : nextAttempts.filter((attempt) => attempt.correct).length,
         total: wasCompleted ? initialTotal : nextAttempts.length, updatedAt: new Date().toISOString(),
-        missionState: { cart, hintLevel, attemptIds: nextAttempts.map((attempt) => attempt.id), supportAttempt, runActive: true },
+        missionState: { cart, hintLevel, attemptIds: nextAttempts.map((attempt) => attempt.id), supportAttempt, runActive: true, paymentComplete: correct },
       })
       setAttempts(nextAttempts)
       setFeedback(correct ? 'correct' : overBudget ? 'over' : 'incorrect')
@@ -125,6 +127,7 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   }
 
   const advance = async () => {
+    if (completionLocked.current) return
     if (step < 2) {
       setStep((current) => current + 1)
       setCart({})
@@ -135,13 +138,13 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
       submissionLocked.current = false
       return
     }
-    await saveProgress({
-      profileId: profile.id, missionId: 'shopping', completed: true, currentStep: 3,
-      score: wasCompleted ? initialScore : attempts.filter((item) => item.correct).length,
-      total: wasCompleted ? initialTotal : attempts.length,
-      updatedAt: new Date().toISOString(), missionState: { cart: {}, hintLevel: 0, attemptIds: [], supportAttempt: false, runActive: false },
-    })
-    onComplete(attempts, !wasCompleted)
+    completionLocked.current = true
+    try {
+      await onComplete(attempts, !wasCompleted)
+    } catch (error) {
+      completionLocked.current = false
+      throw error
+    }
   }
 
   return <div className="mission-shell learning-screen shopping-mission"><header className="mission-header"><button className="icon-button" onClick={onExit} aria-label={c.back}>×</button><div className="step-track shopping-track"><span style={{ width: `${(step + 1) / 3 * 100}%` }} /></div><strong>{step + 1}/3</strong></header>

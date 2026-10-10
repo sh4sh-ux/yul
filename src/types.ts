@@ -31,6 +31,8 @@ export interface MissionProgress {
     attemptIds?: string[]
     supportAttempt?: boolean
     runActive?: boolean
+    /** A successful checkout waiting for the learner to advance. */
+    paymentComplete?: boolean
   }
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createBackup, getAnswers, getProfiles, initialiseProfiles, resetDatabaseConnectionForTests, restoreBackup, saveAnswer, saveProfile, validateBackup } from './storage'
+import { createBackup, getAnswers, getProfiles, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, restoreBackup, saveAnswer, saveProfile, saveProgress, validateBackup } from './storage'
 
 const clearDatabase = async () => {
   await resetDatabaseConnectionForTests()
@@ -39,6 +39,27 @@ describe('IndexedDB learning repository', () => {
     expect(validateBackup(backup)).toBe(true)
     await restoreBackup(backup)
     expect(await getProfiles()).toHaveLength(2)
+  })
+  it('keeps shopping answers and resumable cart state in a version-1 backup', async () => {
+    await initialiseProfiles()
+    await saveAnswer({ id: 'shop-a1', profileId: 'gayul', missionId: 'shopping', questionId: 'shopping-v12-y5-foundation-fruit-count', correct: false, hintsUsed: 1, answeredAt: '2026-10-10T00:00:00.000Z', answer: '[["apple",1]]' })
+    await saveProgress({ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 1, score: 0, total: 3, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, hintLevel: 1 } })
+    const backup = await createBackup()
+    expect(backup.version).toBe(1)
+    expect(validateBackup(backup)).toBe(true)
+    await restoreBackup(backup)
+    expect((await getAnswers('gayul'))[0]).toMatchObject({ missionId: 'shopping', profileId: 'gayul' })
+    expect((await getProgress('gayul'))[0]).toMatchObject({ missionId: 'shopping', missionState: { cart: { milk: 2 }, hintLevel: 1 } })
+    expect(await getAnswers('hayul')).toHaveLength(0)
+  })
+  it('rejects malformed resumable shopping state before restore', async () => {
+    await initialiseProfiles()
+    const before = await getProfiles()
+    const backup = await createBackup()
+    const malformed = { ...backup, progress: [{ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 0, score: 0, total: 3, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: -2 }, hintLevel: 7 } }] }
+    expect(validateBackup(malformed)).toBe(false)
+    await expect(restoreBackup(malformed)).rejects.toThrow()
+    expect(await getProfiles()).toEqual(before)
   })
   it('migrates legacy v1 difficulty values while keeping backup schema and data', async () => {
     await initialiseProfiles()

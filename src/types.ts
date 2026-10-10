@@ -24,6 +24,11 @@ export interface MissionProgress {
   score: number
   total: number
   updatedAt: string
+  /** Optional mission UI state. Older progress and v1 backups remain valid without it. */
+  missionState?: {
+    cart?: Record<string, number>
+    hintLevel?: number
+  }
 }
 
 export interface Profile {
@@ -64,4 +69,4 @@ export interface MissionProgressWithProfile extends MissionProgress {
   profileId: string
 }
 
-export type Screen = 'profiles' | 'home' | 'map' | 'review' | 'progress' | 'settings' | 'mission-intro' | 'mission'
+export type Screen = 'profiles' | 'home' | 'map' | 'review' | 'progress' | 'settings' | 'mission-intro' | 'mission' | 'shopping-intro' | 'shopping-mission'

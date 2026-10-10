@@ -114,7 +114,16 @@ export function validateBackup(value: unknown): value is AppBackup {
     && typeof answer.correct === 'boolean' && typeof answer.hintsUsed === 'number'
     && (answer.objectiveId === undefined || typeof answer.objectiveId === 'string')
     && (answer.supportAttempt === undefined || typeof answer.supportAttempt === 'boolean'))
-    && item.progress.every((progress) => progress && ['gayul', 'hayul'].includes(progress.profileId) && typeof progress.completed === 'boolean')
+    && item.progress.every((progress) => {
+      if (!progress || !['gayul', 'hayul'].includes(progress.profileId) || typeof progress.completed !== 'boolean') return false
+      if (progress.missionState === undefined) return true
+      const state = progress.missionState
+      if (!state || typeof state !== 'object' || Array.isArray(state)) return false
+      const validHint = state.hintLevel === undefined || (Number.isInteger(state.hintLevel) && state.hintLevel >= 0 && state.hintLevel <= 2)
+      const validCart = state.cart === undefined || (state.cart !== null && typeof state.cart === 'object' && !Array.isArray(state.cart)
+        && Object.values(state.cart).every((quantity) => Number.isInteger(quantity) && quantity >= 0 && quantity <= 9))
+      return validHint && validCart
+    })
 }
 
 export async function restoreBackup(value: unknown): Promise<void> {

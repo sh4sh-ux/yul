@@ -25,4 +25,17 @@ describe('ReviewScreen', () => {
     expect(screen.getByText(prompt)).toBeInTheDocument()
     expect(screen.queryByText(language === 'ko' ? '75%와 같은 피자 양을 나타내세요.' : 'Show the pizza amount equal to 75%.')).not.toBeInTheDocument()
   })
+  it.each([
+    ['ko', '학급 소풍 목록을 정확히 담으세요.'],
+    ['en', 'Build the exact class picnic order.'],
+  ] as const)('reconstructs a shopping review prompt in %s', (language, prompt) => {
+    const answer: AnswerRecord = {
+      id: `shopping-${language}`, profileId: 'gayul', missionId: 'shopping',
+      questionId: 'shopping-v12-y5-advanced-class-picnic', correct: false, hintsUsed: 1,
+      objectiveId: 'multi-step-budget', answeredAt: '2026-10-10T00:00:00.000Z', answer: '[]',
+    }
+    render(<ReviewScreen language={language} answers={[answer]} />)
+    expect(screen.getByText(prompt)).toBeInTheDocument()
+    expect(screen.getByText(language === 'ko' ? '쇼핑 챌린지' : 'Shopping Challenge')).toBeInTheDocument()
+  })
 })

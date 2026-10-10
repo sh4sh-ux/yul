@@ -1,6 +1,7 @@
 import type { AnswerRecord, Language, MissionProgressWithProfile, Profile } from '../types'
 import { t } from '../i18n'
 import { pizzaReviewPrompt } from '../pizzaProblems'
+import { shoppingReviewPrompt } from '../shoppingProblems'
 
 const missions = [
   { id: 'pizza', icon: '🍕', key: 'pizzaTitle' as const, colour: 'coral', subject: '1 · FRACTIONS' },
@@ -10,18 +11,20 @@ const missions = [
   { id: 'creator', icon: '💡', key: 'creator' as const, colour: 'yellow', subject: '5 · CREATIVITY' },
 ]
 
-export function HomeScreen({ profile, pizzaProgress, onMission, onMap }: { profile: Profile; pizzaProgress?: MissionProgressWithProfile; onMission: () => void; onMap: () => void }) {
+export function HomeScreen({ profile, pizzaProgress, shoppingProgress, onMission, onShopping, onMap }: { profile: Profile; pizzaProgress?: MissionProgressWithProfile; shoppingProgress?: MissionProgressWithProfile; onMission: () => void; onShopping: () => void; onMap: () => void }) {
   const language = profile.language
   return <div className="page home-page">
     <section className="hero"><div><span className="eyebrow">{t(language, 'hello')}, {profile.name}!</span><h1>{t(language, 'todayAdventure')}</h1><p>{t(language, 'tagline')}</p></div><div className="xp-badge">⭐ {profile.xp} XP</div></section>
     <button className="featured-mission" onClick={onMission}><div className="pizza-art" aria-hidden="true">🍕</div><div className="featured-copy"><span className="mission-number">MISSION 01</span><h2>{t(language, 'pizzaTitle')}</h2><p>{t(language, 'pizzaSubtitle')}</p><span className="button primary inline">{pizzaProgress && pizzaProgress.currentStep > 0 && !pizzaProgress.completed ? t(language, 'resumeMission') : t(language, 'startMission')} →</span></div></button>
+    <button className="shopping-home-card" onClick={onShopping}><span className="shopping-home-icon">🛒</span><span><small>MISSION 02 · MONEY</small><strong>{t(language, 'shopping')}</strong><em>{shoppingProgress && shoppingProgress.currentStep > 0 && !shoppingProgress.completed ? t(language, 'resumeMission') : t(language, 'startMission')} →</em></span></button>
     <div className="section-heading"><div><span className="eyebrow">5 REGIONS</span><h2>{t(language, 'mapTitle')}</h2></div><button className="text-button" onClick={onMap}>{t(language, 'explore')} →</button></div>
-    <div className="mini-route">{missions.map((mission, index) => <div className={`mini-node ${index === 0 ? 'ready' : ''}`} key={mission.id}><span>{mission.icon}</span><small>{index + 1}</small></div>)}</div>
+    <div className="mini-route">{missions.map((mission, index) => <div className={`mini-node ${index <= 1 ? 'ready' : ''}`} key={mission.id}><span>{mission.icon}</span><small>{index + 1}</small></div>)}</div>
   </div>
 }
 
-export function MapScreen({ language, pizzaCompleted, onPizza, onUnavailable }: { language: Language; pizzaCompleted: boolean; onPizza: () => void; onUnavailable: (title: string) => void }) {
-  return <div className="page"><header className="page-header"><span className="eyebrow">FREE EXPLORE</span><h1>{t(language, 'mapTitle')}</h1><p>{t(language, 'lockedNote')}</p></header><div className="adventure-map">{missions.map((mission, index) => <button key={mission.id} className={`map-stop ${mission.colour} ${index % 2 ? 'right' : 'left'}`} onClick={() => mission.id === 'pizza' ? onPizza() : onUnavailable(t(language, mission.key))}><span className="map-icon">{mission.icon}</span><span className="map-copy"><small>{mission.subject}</small><strong>{t(language, mission.key)}</strong><em>{mission.id === 'pizza' ? (pizzaCompleted ? '✓' : t(language, 'available')) : t(language, 'comingSoon')}</em></span></button>)}</div></div>
+export function MapScreen({ language, pizzaCompleted, shoppingCompleted, onPizza, onShopping, onUnavailable }: { language: Language; pizzaCompleted: boolean; shoppingCompleted: boolean; onPizza: () => void; onShopping: () => void; onUnavailable: (title: string) => void }) {
+  const status = (missionId: string) => missionId === 'pizza' ? (pizzaCompleted ? '✓' : t(language, 'available')) : missionId === 'shopping' ? (shoppingCompleted ? '✓' : t(language, 'available')) : t(language, 'comingSoon')
+  return <div className="page"><header className="page-header"><span className="eyebrow">FREE EXPLORE</span><h1>{t(language, 'mapTitle')}</h1><p>{t(language, 'lockedNote')}</p></header><div className="adventure-map">{missions.map((mission, index) => <button key={mission.id} className={`map-stop ${mission.colour} ${index % 2 ? 'right' : 'left'}`} onClick={() => mission.id === 'pizza' ? onPizza() : mission.id === 'shopping' ? onShopping() : onUnavailable(t(language, mission.key))}><span className="map-icon">{mission.icon}</span><span className="map-copy"><small>{mission.subject}</small><strong>{t(language, mission.key)}</strong><em>{status(mission.id)}</em></span></button>)}</div></div>
 }
 
 export function UnavailableCard({ language, title, onBack }: { language: Language; title: string; onBack: () => void }) {
@@ -31,6 +34,8 @@ export function UnavailableCard({ language, title, onBack }: { language: Languag
 export function ReviewScreen({ language, answers }: { language: Language; answers: AnswerRecord[] }) {
   const wrong = answers.filter((answer) => !answer.correct).slice().reverse()
   const questionText = (questionId: string) => {
+    const shoppingPrompt = shoppingReviewPrompt(questionId, language)
+    if (shoppingPrompt) return shoppingPrompt
     const currentPrompt = pizzaReviewPrompt(questionId, language)
     if (currentPrompt) return currentPrompt
     if (questionId === 'slices') return t(language, 'slicesPrompt')
@@ -39,7 +44,7 @@ export function ReviewScreen({ language, answers }: { language: Language; answer
     if (questionId === 'unlike-denominator-challenge') return t(language, 'question3Challenge')
     return t(language, 'question3')
   }
-  return <div className="page"><header className="page-header"><span className="eyebrow">REVIEW</span><h1>{t(language, 'reviewTitle')}</h1><p>{t(language, 'reviewBody')}</p></header>{wrong.length === 0 ? <div className="empty-card"><span className="big-icon">📖</span><p>{t(language, 'noReview')}</p></div> : <div className="review-list">{wrong.map((answer) => <article className="review-card" key={answer.id}><span>🍕</span><div><strong>{t(language, 'pizzaTitle')}</strong><p>{questionText(answer.questionId)}</p><small>{new Date(answer.answeredAt).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'en-NZ')}</small></div></article>)}</div>}</div>
+  return <div className="page"><header className="page-header"><span className="eyebrow">REVIEW</span><h1>{t(language, 'reviewTitle')}</h1><p>{t(language, 'reviewBody')}</p></header>{wrong.length === 0 ? <div className="empty-card"><span className="big-icon">📖</span><p>{t(language, 'noReview')}</p></div> : <div className="review-list">{wrong.map((answer) => <article className="review-card" key={answer.id}><span>{answer.missionId === 'shopping' ? '🛒' : '🍕'}</span><div><strong>{answer.missionId === 'shopping' ? t(language, 'shopping') : t(language, 'pizzaTitle')}</strong><p>{questionText(answer.questionId)}</p><small>{new Date(answer.answeredAt).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'en-NZ')}</small></div></article>)}</div>}</div>
 }
 
 export function ProgressScreen({ profile, answers, progress }: { profile: Profile; answers: AnswerRecord[]; progress: MissionProgressWithProfile[] }) {

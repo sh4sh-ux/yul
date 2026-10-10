@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildPizzaQuestions, localise } from '../pizzaProblems'
 import { defaultProfiles, getAnswers, getProgress, resetDatabaseConnectionForTests, saveProgress } from '../storage'
 import type { Language, MathLevel } from '../types'
-import { PizzaMission } from './PizzaMission'
+import { isWorkingAnswerCorrect, PizzaMission } from './PizzaMission'
 
 const clearDatabase = async () => {
   await resetDatabaseConnectionForTests()
@@ -19,11 +19,39 @@ const selectSlices = async (user: ReturnType<typeof userEvent.setup>, count: num
   const slices = screen.getAllByRole('button', { name: /(피자 조각|pizza slice) \d/ })
   for (const slice of slices.slice(0, count)) await user.click(slice)
 }
+const completeMasterWorking = async (user: ReturnType<typeof userEvent.setup>) => {
+  const input = screen.queryByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.') ?? screen.queryByLabelText('Enter the least common denominator as a whole number.')
+  if (!input) return
+  await user.type(input, '12')
+  await user.click(screen.getByRole('button', { name: /이 단계 확인|Check this step/ }))
+  const fraction = screen.getByLabelText(/통분한 뒤 계산한 분수|Enter the fraction after/)
+  await user.type(fraction, '7/12')
+  await user.click(screen.getByRole('button', { name: /이 단계 확인|Check this step/ }))
+}
 const foundationProfile = () => ({ ...defaultProfiles()[0], year: 5 as const, difficulty: 'foundation' as const, mathLevel: 'foundation' as const, adaptiveDifficulty: false })
 
 describe('PizzaMission', () => {
   beforeEach(clearDatabase)
   afterEach(clearDatabase)
+
+  it.each([
+    ['14/24', ['7/12']],
+    ['60%', ['0.6']],
+    ['0.60', ['60%']],
+    ['3/5', ['60%']],
+  ])('accepts the mathematically equivalent working answer %s', (answer, expected) => {
+    expect(isWorkingAnswerCorrect(answer, expected)).toBe(true)
+  })
+
+  it.each(['1/0', '4//5', 'not-a-number', '50%%'])('safely rejects invalid working input %s', (answer) => {
+    expect(isWorkingAnswerCorrect(answer, ['1/2'])).toBe(false)
+  })
+
+  it('enforces the requested whole-number format for a least common denominator', () => {
+    expect(isWorkingAnswerCorrect('12', ['12'], 'integer')).toBe(true)
+    expect(isWorkingAnswerCorrect('12.0', ['12'], 'integer')).toBe(false)
+    expect(isWorkingAnswerCorrect('24/2', ['12'], 'integer')).toBe(false)
+  })
 
   it('checks a visually selected three-quarter pizza and advances', async () => {
     const user = userEvent.setup()
@@ -82,6 +110,43 @@ describe('PizzaMission', () => {
     expect(screen.getByText('3/4을 피자로 나타내세요.')).toBeInTheDocument()
   })
 
+  it('does not expose a calculated answer before submission and explains it afterwards', async () => {
+    const user = userEvent.setup()
+    const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: 'expert' as const, mathLevel: 'expert' as const, adaptiveDifficulty: false }
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    expect(screen.getByText('1/3 + 1/4 = ?')).toBeInTheDocument()
+    expect(screen.queryByText('답은 7/12예요.')).not.toBeInTheDocument()
+    await selectSlices(user, 7)
+    await user.click(screen.getByRole('button', { name: '정답 확인' }))
+    expect(await screen.findByText('답은 7/12예요.')).toBeInTheDocument()
+  })
+
+  it('validates Master working before unlocking the pizza visualisation', async () => {
+    const user = userEvent.setup()
+    const profile = { ...defaultProfiles()[0], year: 7 as const, difficulty: 'master' as const, mathLevel: 'master' as const, adaptiveDifficulty: false }
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    expect(screen.getByText('5/6 - 1/4 = ?')).toBeInTheDocument()
+    expect(screen.queryByText('답은 7/12예요.')).not.toBeInTheDocument()
+    const firstSlice = screen.getAllByRole('button', { name: /피자 조각/ })[0]
+    expect(firstSlice).toHaveAttribute('aria-disabled', 'true')
+
+    await user.type(screen.getByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.'), '10')
+    await user.click(screen.getByRole('button', { name: '이 단계 확인' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('좋은 시도예요')
+    await user.clear(screen.getByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.'))
+    await user.type(screen.getByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.'), '12')
+    await user.click(screen.getByRole('button', { name: '이 단계 확인' }))
+    await user.type(screen.getByLabelText('통분한 뒤 계산한 분수를 입력하세요.'), '14/24')
+    await user.click(screen.getByRole('button', { name: '이 단계 확인' }))
+    expect(firstSlice).toHaveAttribute('aria-disabled', 'false')
+    const pizzaGuide = screen.getAllByText('3 · 피자 시각화')[1]
+    await waitFor(() => expect(pizzaGuide).toHaveFocus())
+    expect(screen.getByRole('status')).toHaveTextContent('계산을 확인했어요')
+    await selectSlices(user, 7)
+    await user.click(screen.getByRole('button', { name: '정답 확인' }))
+    expect(await screen.findByText('답은 7/12예요.')).toBeInTheDocument()
+  })
+
   it('shows supportive feedback and progressive hints after a wrong answer', async () => {
     const user = userEvent.setup()
     const profile = foundationProfile()
@@ -111,6 +176,7 @@ describe('PizzaMission', () => {
     const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: level, mathLevel: level, adaptiveDifficulty: false, language }
     const baseQuestion = buildPizzaQuestions(profile, [])[0]
     render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    await completeMasterWorking(user)
 
     await user.click(screen.getByRole('button', { name: language === 'ko' ? /힌트/ : /Hint/ }))
     expect(screen.getByText(localise(baseQuestion.hints[0], language))).toBeInTheDocument()

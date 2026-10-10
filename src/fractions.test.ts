@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addFractions, fractionsEqual, normaliseFraction, parseFraction, suggestedDifficulty } from './fractions'
+import { addFractions, fractionsEqual, normaliseFraction, parseFraction, parseRational, rationalsEqual, suggestedDifficulty } from './fractions'
 
 describe('exact fraction maths', () => {
   it('normalises fractions without floating-point arithmetic', () => {
@@ -15,6 +15,21 @@ describe('exact fraction maths', () => {
     expect(parseFraction(' 3 / 4 ')).toEqual({ numerator: 3, denominator: 4 })
     expect(parseFraction('0.75')).toBeNull()
     expect(parseFraction('3/0')).toBeNull()
+  })
+})
+
+describe('exact rational input', () => {
+  it.each([
+    ['7/12', '14/24'],
+    ['60%', '0.6'],
+    ['0.60', '3/5'],
+    ['12', '12.0'],
+  ])('treats %s and %s as mathematically equivalent', (left, right) => {
+    expect(rationalsEqual(parseRational(left)!, parseRational(right)!)).toBe(true)
+  })
+
+  it.each(['', 'not a number', '1/0', '4//5', '1e3', '50%%', '3/'])('safely rejects %s', (input) => {
+    expect(parseRational(input)).toBeNull()
   })
 })
 

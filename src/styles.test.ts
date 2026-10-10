@@ -10,3 +10,12 @@ describe('shopping brand colours', () => {
     expect(styles).toContain('background: var(--mint)')
   })
 })
+
+describe('pizza interaction focus styles', () => {
+  it('uses slice-shaped focus-visible and selected outlines without a mouse focus rectangle', () => {
+    expect(styles).toContain('.svg-slice:focus { outline: none; }')
+    expect(styles).toContain('.svg-slice:focus-visible path')
+    expect(styles).toContain('.svg-slice.selected path')
+    expect(styles).toContain('stroke-linejoin: round')
+  })
+})

@@ -11,6 +11,7 @@ interface YuliDB extends DBSchema {
 }
 
 let database: Promise<IDBPDatabase<YuliDB>> | null = null
+export type LearningResetTarget = Profile['id'] | 'all'
 
 const db = () => {
   if (!database) {
@@ -125,6 +126,48 @@ export async function getProgress(profileId: string): Promise<MissionProgressWit
 
 export async function saveProgress(progress: MissionProgressWithProfile): Promise<void> {
   await (await db()).put('progress', { ...progress, key: `${progress.profileId}:${progress.missionId}` } as MissionProgressWithProfile)
+}
+
+/**
+ * Removes learning evidence and rewards while preserving identity and every
+ * learner-controlled setting. Profile updates and record deletion share one
+ * transaction so a failed reset cannot leave a partial result.
+ */
+export async function resetLearningRecords(target: LearningResetTarget): Promise<Profile[]> {
+  const store = await db()
+  const transaction = store.transaction(['profiles', 'answers', 'progress'], 'readwrite')
+  const profilesStore = transaction.objectStore('profiles')
+  const answersStore = transaction.objectStore('answers')
+  const progressStore = transaction.objectStore('progress')
+  try {
+    const profiles = await profilesStore.getAll()
+    const profileIds: Profile['id'][] = target === 'all' ? ['gayul', 'hayul'] : [target]
+    const updated = profiles.map((profile) => {
+      if (!profileIds.includes(profile.id)) return profile
+      const { diagnostic: _diagnostic, ...preserved } = profile
+      return { ...preserved, xp: 0, updatedAt: now() } as Profile
+    })
+
+    const writes: Promise<unknown>[] = updated
+      .filter((profile) => profileIds.includes(profile.id))
+      .map((profile) => profilesStore.put(profile))
+    if (target === 'all') {
+      writes.push(answersStore.clear(), progressStore.clear())
+    } else {
+      const [answerKeys, progressKeys] = await Promise.all([
+        answersStore.index('by-profile').getAllKeys(target),
+        progressStore.index('by-profile').getAllKeys(target),
+      ])
+      writes.push(...answerKeys.map((key) => answersStore.delete(key)), ...progressKeys.map((key) => progressStore.delete(key)))
+    }
+    await Promise.all(writes)
+    await transaction.done
+    return updated.sort((a, b) => a.id.localeCompare(b.id))
+  } catch (error) {
+    try { transaction.abort() } catch { /* Transaction may already be aborted. */ }
+    try { await transaction.done } catch { /* Preserve the original failure. */ }
+    throw error
+  }
 }
 
 export async function setSelectedProfile(profileId: string | null): Promise<void> { await (await db()).put('meta', profileId, 'selectedProfile') }

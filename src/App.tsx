@@ -99,7 +99,7 @@ export default function App() {
     {screen === 'map' && (unavailable ? <UnavailableCard language={selected.language} title={unavailable} onBack={() => setUnavailable('')} /> : <MapScreen language={selected.language} pizzaCompleted={pizzaProgress?.completed ?? false} shoppingCompleted={shoppingProgress?.completed ?? false} onPizza={() => setScreen('mission-intro')} onShopping={() => setScreen('shopping-intro')} onUnavailable={setUnavailable} />)}
     {screen === 'review' && <ReviewScreen language={selected.language} answers={answers} />}
     {screen === 'progress' && <ProgressScreen profile={selected} answers={answers} progress={progress} />}
-    {screen === 'settings' && <SettingsScreen profile={selected} onEdit={() => { setEditor(selected); setEditorRequired(false) }} onProfileChange={updateSelected} onSwitch={switchProfile} onRestored={restored} />}
+    {screen === 'settings' && <SettingsScreen profile={selected} profiles={profiles} onEdit={() => { setEditor(selected); setEditorRequired(false) }} onProfileChange={updateSelected} onSwitch={switchProfile} onRestored={restored} />}
     {editor && <ProfileEditor profile={editor} language={selected.language} onSave={commitProfile} onCancel={() => setEditor(null)} />}
     {(needRefresh || offlineReady) && <div className="pwa-toast" role="status"><span>{needRefresh ? t(selected.language, 'updateReady') : t(selected.language, 'offlineReady')}</span>{needRefresh ? <button onClick={() => updateServiceWorker(true)}>{t(selected.language, 'update')}</button> : <button onClick={() => setOfflineReady(false)}>×</button>}</div>}
   </AppShell>

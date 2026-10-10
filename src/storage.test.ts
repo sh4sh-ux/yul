@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { completeMissionWithReward, createBackup, getAnswers, getProfiles, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, restoreBackup, saveAnswer, saveProfile, saveProgress, validateBackup } from './storage'
+import { completeMissionWithReward, createBackup, getAnswers, getProfiles, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, resetLearningRecords, restoreBackup, saveAnswer, saveProfile, saveProgress, validateBackup } from './storage'
 
 const clearDatabase = async () => {
   await resetDatabaseConnectionForTests()
@@ -154,6 +154,54 @@ describe('IndexedDB learning repository', () => {
     await restoreBackup(backup)
     expect((await getProfiles()).find((profile) => profile.id === 'gayul')?.diagnostic?.recommendedLevel).toBe('expert')
     expect((await getProfiles()).find((profile) => profile.id === 'hayul')?.diagnostic).toBeUndefined()
+  })
+  it.each([
+    ['gayul', 'hayul'],
+    ['hayul', 'gayul'],
+  ] as const)('resets only %s while preserving %s and learner settings', async (target, other) => {
+    const profiles = await initialiseProfiles()
+    for (const item of profiles) {
+      const names = item.id === 'gayul' ? { ko: '가율별', en: 'Helen' } : { ko: '하율별', en: 'Moon' }
+      await saveProfile({ ...item, name: names.ko, names, year: item.id === 'gayul' ? 5 : 7, language: item.id === 'gayul' ? 'ko' : 'en', mathLevel: item.id === 'gayul' ? 'expert' : 'core', difficulty: item.id === 'gayul' ? 'expert' : 'core', adaptiveDifficulty: true, unitDifficulties: { pizza: 'master', shopping: 'foundation' }, xp: item.id === 'gayul' ? 90 : 120, diagnostic: { completedAt: '2026-10-10T00:00:00.000Z', score: 8, total: 10, recommendedLevel: 'expert', applied: true } })
+      await saveAnswer({ id: `${item.id}-answer`, profileId: item.id, missionId: 'pizza', questionId: 'question', correct: false, hintsUsed: 2, answeredAt: '2026-10-10T00:00:00.000Z', answer: '1/4' })
+      await saveProgress({ profileId: item.id, missionId: 'shopping', completed: true, currentStep: 2, score: 1, total: 2, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, runActive: true } })
+    }
+
+    await resetLearningRecords(target)
+    await resetDatabaseConnectionForTests()
+    const stored = await getProfiles()
+    const resetProfile = stored.find((item) => item.id === target)!
+    const untouchedProfile = stored.find((item) => item.id === other)!
+    expect(resetProfile).toMatchObject({ id: target, xp: 0, adaptiveDifficulty: true, unitDifficulties: { pizza: 'master', shopping: 'foundation' } })
+    expect(resetProfile.names).toEqual(target === 'gayul' ? { ko: '가율별', en: 'Helen' } : { ko: '하율별', en: 'Moon' })
+    expect(resetProfile.diagnostic).toBeUndefined()
+    expect(await getAnswers(target)).toHaveLength(0)
+    expect(await getProgress(target)).toHaveLength(0)
+    expect(untouchedProfile.xp).toBe(other === 'gayul' ? 90 : 120)
+    expect(untouchedProfile.diagnostic).toBeDefined()
+    expect(await getAnswers(other)).toHaveLength(1)
+    expect(await getProgress(other)).toHaveLength(1)
+  })
+  it('resets all learning data while retaining both identities and manual configuration', async () => {
+    const profiles = await initialiseProfiles()
+    for (const item of profiles) {
+      await saveProfile({ ...item, year: item.id === 'gayul' ? 5 : 7, language: item.id === 'gayul' ? 'ko' : 'en', mathLevel: 'master', difficulty: 'master', adaptiveDifficulty: false, unitDifficulties: { pizza: 'expert' }, xp: 70, diagnostic: { completedAt: '2026-10-10T00:00:00.000Z', score: 9, total: 10, recommendedLevel: 'master', applied: true } })
+      await saveAnswer({ id: `${item.id}-all-answer`, profileId: item.id, missionId: 'shopping', questionId: 'question', correct: true, hintsUsed: 1, answeredAt: '2026-10-10T00:00:00.000Z', answer: '[]' })
+      await saveProgress({ profileId: item.id, missionId: 'pizza', completed: true, currentStep: 3, score: 3, total: 3, updatedAt: '2026-10-10T00:00:00.000Z' })
+    }
+
+    await resetLearningRecords('all')
+    const stored = await getProfiles()
+    expect(stored.map((item) => item.id).sort()).toEqual(['gayul', 'hayul'])
+    for (const item of stored) {
+      expect(item).toMatchObject({ xp: 0, mathLevel: 'master', difficulty: 'master', adaptiveDifficulty: false, unitDifficulties: { pizza: 'expert' } })
+      expect(item.diagnostic).toBeUndefined()
+      expect(await getAnswers(item.id)).toHaveLength(0)
+      expect(await getProgress(item.id)).toHaveLength(0)
+    }
+    expect(stored.find((item) => item.id === 'gayul')).toMatchObject({ name: '가율', names: { ko: '가율', en: 'Helena' }, avatar: '🌿', year: 5, language: 'ko' })
+    expect(stored.find((item) => item.id === 'hayul')).toMatchObject({ name: '하율', names: { ko: '하율', en: 'Luna' }, avatar: '🚀', year: 7, language: 'en' })
+    expect(validateBackup(await createBackup())).toBe(true)
   })
   it('rejects malformed backups before changing data', async () => {
     await initialiseProfiles()

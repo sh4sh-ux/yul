@@ -34,6 +34,25 @@ describe('five-level pizza problem bank', () => {
     expect(buildPizzaQuestions(profileFor(7, 'master'), []).every((question) => question.curriculumBand === 'extension')).toBe(true)
     expect(buildPizzaQuestions(profileFor(7, 'expert'), []).every((question) => question.curriculumBand === 'core')).toBe(true)
   })
+  it('keeps calculated results out of Expert and Master order tickets', () => {
+    for (const level of ['expert', 'master'] as MathLevel[]) {
+      for (const question of buildPizzaQuestions(profileFor(7, level), [])) {
+        expect(question.equation).toContain('?')
+        expect(question.support.equation).toContain('?')
+      }
+    }
+  })
+  it('provides validated intermediate working for every Master task', () => {
+    for (const year of [5, 7]) {
+      const questions = buildPizzaQuestions(profileFor(year, 'master'), [])
+      expect(questions.every((question) => question.workingSteps?.length === 2)).toBe(true)
+      for (const question of questions) for (const step of question.workingSteps ?? []) {
+        expect(step.prompt.ko).toBeTruthy()
+        expect(step.prompt.en).toBeTruthy()
+        expect(step.acceptedAnswers.length).toBeGreaterThan(0)
+      }
+    }
+  })
   it('does not lower after ordinary misses and requires failed supported retries', () => {
     const adaptive = profileFor(7, 'advanced', true)
     expect(resolvePizzaDifficulty(adaptive, recent([{ correct: false }]))).toBe('advanced')

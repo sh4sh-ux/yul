@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fractionsEqual } from '../fractions'
 import { t } from '../i18n'
+import { levelRank } from '../mathLevels'
 import { buildPizzaQuestions, localise } from '../pizzaProblems'
 import { saveAnswer, saveProgress } from '../storage'
 import type { AnswerRecord, Profile } from '../types'
@@ -21,11 +22,13 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
   const [feedback, setFeedback] = useState<'correct' | 'incorrect' | null>(null)
   const [hintLevel, setHintLevel] = useState(0)
   const [translation, setTranslation] = useState(false)
+  const [usingSupport, setUsingSupport] = useState(false)
   const [attempts, setAttempts] = useState<AnswerRecord[]>([])
   const [submitting, setSubmitting] = useState(false)
   const submissionLocked = useRef(false)
   const otherLanguage = language === 'ko' ? 'en' : 'ko'
-  const question = questions[step]
+  const baseQuestion = questions[step]
+  const question = usingSupport ? { ...baseQuestion, ...baseQuestion.support } : baseQuestion
   const currentFraction = { numerator: selected.size, denominator: question.denominator }
   const correct = fractionsEqual(currentFraction, question.target)
 
@@ -57,6 +60,7 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
     const record: AnswerRecord = {
       id: crypto.randomUUID(), profileId: profile.id, missionId: 'pizza', questionId: question.id, correct,
       hintsUsed: hintLevel, answeredAt: new Date().toISOString(), answer: `${selected.size}/${question.denominator}`,
+      objectiveId: baseQuestion.objectiveId, supportAttempt: usingSupport,
     }
     try {
       await saveAnswer(record)
@@ -72,17 +76,17 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
   }
   const advance = async () => {
     if (step < 2) {
-      setStep(step + 1); setSelected(new Set()); setFeedback(null); setHintLevel(0); setTranslation(false); submissionLocked.current = false
+      setStep(step + 1); setSelected(new Set()); setFeedback(null); setHintLevel(0); setTranslation(false); setUsingSupport(false); submissionLocked.current = false
       return
     }
     await saveProgress({ profileId: profile.id, missionId: 'pizza', completed: true, currentStep: 3, score: attempts.filter((item) => item.correct).length, total: attempts.length, updatedAt: new Date().toISOString() })
     onComplete(attempts, !wasCompleted)
   }
-  const retry = () => { setFeedback(null); submissionLocked.current = false }
+  const retry = () => { if (!usingSupport) setUsingSupport(true); setSelected(new Set()); setHintLevel((level) => Math.max(1, level)); setFeedback(null); submissionLocked.current = false }
 
   return <div className="mission-shell learning-screen"><header className="mission-header"><button className="icon-button" onClick={onExit} aria-label={t(language, 'back')}>×</button><div className="step-track"><span style={{ width: `${(step + 1) / 3 * 100}%` }} /></div><strong>{step + 1}/3</strong></header>
     <main className="learning-main pizza-learning-main">
-      <section className="question-panel"><div className="question-heading"><span className="stage-badge">{localise(question.stageName, language)}</span><span className="concept-chip">{localise(question.concept, language)}</span></div><h1>{localise(question.prompt, language)}</h1>{question.story && <p className="mission-story">{localise(question.story, language)}</p>}{question.equation && <div className="order-ticket"><span>🍕 {t(language, 'orderTicket')}</span><strong>{question.equation}</strong></div>}
+      <section className="question-panel"><div className="question-heading"><span className="stage-badge">{localise(question.stageName, language)}</span><span className="concept-chip">{localise(question.concept, language)}</span><span className="level-chip">L{levelRank(baseQuestion.level)} · {baseQuestion.level}{baseQuestion.curriculumBand === 'extension' ? ` · ${language === 'ko' ? '확장' : 'extension'}` : ''}</span></div>{usingSupport && <p className="support-label">{language === 'ko' ? '같은 생각을 다른 문제로 연습해요' : 'Try the same idea in a different problem'}</p>}<h1>{localise(question.prompt, language)}</h1>{question.story && <p className="mission-story">{localise(question.story, language)}</p>}{question.equation && <div className="order-ticket"><span>🍕 {t(language, 'orderTicket')}</span><strong>{question.equation}</strong></div>}
         {translation && <div className="translation-card"><small>{otherLanguage === 'en' ? 'ENGLISH' : '한국어'}</small><p>{localise(question.prompt, otherLanguage)}</p>{question.story && <p>{localise(question.story, otherLanguage)}</p>}{hintLevel > 0 && <p>💡 {localise(question.hints[hintLevel - 1], otherLanguage)}</p>}</div>}
       </section>
       <section className="pizza-workspace">
@@ -92,7 +96,7 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
       <div className="help-row"><button className="text-button" onClick={() => setHintLevel((level) => Math.min(2, level + 1))}>💡 {hintLevel === 0 ? t(language, 'hint') : t(language, 'nextHint')}</button><button className="text-button" onClick={() => setTranslation(!translation)}>🌐 {translation ? t(language, 'closeTranslation') : t(language, 'translationHelp')}</button></div>
       {hintLevel > 0 && <div className="hint-card"><span>{hintLevel}/2</span>{localise(question.hints[hintLevel - 1], language)}</div>}
     </main>
-    <footer className={`answer-footer ${feedback ?? ''}`}>{feedback ? <div className="feedback-copy"><span>{feedback === 'correct' ? '✓' : '↻'}</span><div><strong>{feedback === 'correct' ? t(language, 'correct') : t(language, 'incorrect')}</strong><p>{feedback === 'correct' ? localise(question.explanation, language) : t(language, 'tryVisualHint')}</p></div></div> : <div className="footer-selection">{selected.size}/{question.denominator}</div>}{feedback === 'correct' ? <button className="button primary" onClick={advance}>{step === 2 ? t(language, 'completeMission') : t(language, 'next')} →</button> : feedback === 'incorrect' ? <button className="button primary" onClick={retry}>{t(language, 'retry')}</button> : <button className="button primary" disabled={selected.size === 0 || submitting} onClick={check}>{t(language, 'check')}</button>}</footer>
+    <footer className={`answer-footer ${feedback ?? ''}`}>{feedback ? <div className="feedback-copy"><span>{feedback === 'correct' ? '✓' : '↻'}</span><div><strong>{feedback === 'correct' ? t(language, 'correct') : t(language, 'incorrect')}</strong><p>{feedback === 'correct' ? localise(baseQuestion.explanation, language) : localise(baseQuestion.alternateExplanation, language)}</p></div></div> : <div className="footer-selection">{selected.size}/{question.denominator}</div>}{feedback === 'correct' ? <button className="button primary" onClick={advance}>{step === 2 ? t(language, 'completeMission') : t(language, 'next')} →</button> : feedback === 'incorrect' ? <button className="button primary" onClick={retry}>{usingSupport ? t(language, 'retry') : (language === 'ko' ? '유사 문제로 연습' : 'Try a similar problem')}</button> : <button className="button primary" disabled={selected.size === 0 || submitting} onClick={check}>{t(language, 'check')}</button>}</footer>
   </div>
 }
 

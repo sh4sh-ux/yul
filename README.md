@@ -26,18 +26,23 @@ The production build uses the `/yul/` base path for GitHub Pages. `vite-plugin-p
 ## Version 1.1 scope
 
 - Editable profiles for Gayul and Hayul with stable internal IDs
-- Per-profile year, language, difficulty, progress, XP, and answer history
+- Per-profile school year, independent maths level, language, progress, XP, and answer history
 - Korean or English UI (one language at a time)
 - Home, adventure map, review, growth, and settings screens
 - Interactive SVG pizza with equal slices, mouse, touch, and keyboard controls
 - Three-stage Pizza Restaurant mission: discover, solve a customer order, and personalised challenge
-- Year- and difficulty-aware questions using exact rational arithmetic
-- Progressive hints, optional translation help, supportive feedback, resume, and results
+- Five learning levels: Foundation, Core, Advanced (default), Expert, and Master extension
+- A 10-question Year-aware diagnostic that recommends—but does not force—a level
+- Structurally distinct Year 5 and Year 7 pathways using exact rational arithmetic
+- Level 3+ multi-step fractions, decimals, percentages, ratios, and real-life reasoning
+- Progressive hints, optional translation help, alternate explanations, similar-problem retries, resume, and results
 - First-completion-only XP; replay keeps completion and awards no duplicate XP
 - Validated JSON backup and restore
 - Installable/offline-capable PWA shell
 
-Existing IndexedDB data from 1.0 remains compatible. Shopping, Travel, Nature, and Creator missions appear on the adventure map as clearly labelled future content. No account sync or external analytics are included in this version.
+Existing IndexedDB data and version-1 backups remain compatible. Legacy Easy, Medium, Challenge, and Auto settings migrate to the five-level model without changing profile IDs, XP, answers, or mission completion. Shopping, Travel, Nature, and Creator missions appear on the adventure map as clearly labelled future content. No account sync or external analytics are included in this version.
+
+The curriculum cross-check and its limits are documented in [`docs/curriculum-alignment.md`](docs/curriculum-alignment.md). Master is explicitly extension content, not a claim about required school progress.
 
 ## Privacy
 

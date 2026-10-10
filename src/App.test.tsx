@@ -32,7 +32,7 @@ describe('YULI app flow', () => {
   it('preserves completion and XP after a completed mission is replayed', async () => {
     const user = userEvent.setup()
     const [gayulDefault, hayul] = defaultProfiles()
-    const gayul = { ...gayulDefault, year: 5 as const, difficulty: 'medium' as const, xp: 30 }
+    const gayul = { ...gayulDefault, year: 5 as const, difficulty: 'foundation' as const, mathLevel: 'foundation' as const, adaptiveDifficulty: false, xp: 30 }
     await saveProfile(gayul)
     await saveProfile(hayul)
     await saveProgress({ profileId: 'gayul', missionId: 'pizza', completed: true, currentStep: 3, score: 3, total: 3, updatedAt: '2026-01-01T00:00:00.000Z' })
@@ -48,7 +48,7 @@ describe('YULI app flow', () => {
     await selectSlices(3)
     await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
     await selectSlices(3); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
-    await selectSlices(4); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /미션 완료/ }))
+    await selectSlices(3); await user.click(screen.getByRole('button', { name: '정답 확인' })); await user.click(await screen.findByRole('button', { name: /미션 완료/ }))
 
     expect(await screen.findByRole('heading', { name: '레스토랑 미션 완료!' })).toBeInTheDocument()
     expect(screen.getByText('+0')).toBeInTheDocument()

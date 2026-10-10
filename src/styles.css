@@ -56,6 +56,7 @@ h2 { letter-spacing: -.025em; }
 .avatar-option { min-height: 48px; border: 2px solid transparent; border-radius: 14px; background: #f3f4f7; font-size: 1.45rem; }
 .avatar-option.selected { border-color: var(--blue); background: #edf0ff; }
 .difficulty-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.level-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .choice-chip { min-height: 44px; border: 1px solid #dcdfe7; background: white; border-radius: 13px; font-weight: 700; }
 .choice-chip.selected { background: #edf0ff; border-color: var(--blue); color: var(--blue); }
 .sheet-actions, .button-row { display: flex; gap: 10px; }
@@ -127,6 +128,14 @@ h2 { letter-spacing: -.025em; }
 .settings-card h2 { font-size: 1rem; margin-bottom: 12px; }
 .profile-setting { display: flex; align-items: center; gap: 12px; }.profile-setting > div { flex: 1; }.profile-setting strong { display: block; }
 .settings-card select { margin-top: 0; }
+.toggle-row { min-height: 48px; display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: .88rem; font-weight: 700; }
+.toggle-row input { width: 22px; height: 22px; accent-color: var(--blue); }
+.diagnostic-sheet { padding-top: 22px; }
+.diagnostic-sheet h3 { line-height: 1.4; margin: 24px 0 16px; }
+.diagnostic-options { display: grid; gap: 10px; margin-bottom: 16px; }
+.diagnostic-options .choice-chip { min-height: 52px; font-size: 1rem; }
+.diagnostic-result { text-align: center; padding: 10px 0; }
+.diagnostic-result .result-medal { margin: 16px auto; font-size: 3rem; }
 .privacy-note { padding-top: 12px; margin: 14px 0 0; border-top: 1px solid var(--line); font-size: .78rem; color: var(--muted); line-height: 1.45; }
 
 .mission-shell { min-height: 100svh; background: #faf9f5; }
@@ -144,8 +153,10 @@ h2 { letter-spacing: -.025em; }
 .learning-main { width: min(100%, 920px); margin: 0 auto; padding: 18px 16px 12px; text-align: center; flex: 1; }
 .question-panel { max-width: 760px; margin: 0 auto; }
 .question-heading { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 8px; }
-.stage-badge, .concept-chip { border-radius: 999px; padding: 6px 10px; font-size: .68rem; font-weight: 800; letter-spacing: .03em; }
+.stage-badge, .concept-chip, .level-chip { border-radius: 999px; padding: 6px 10px; font-size: .68rem; font-weight: 800; letter-spacing: .03em; }
 .stage-badge { background: #e9edff; color: var(--blue); }.concept-chip { background: #e6f6ee; color: #187048; }
+.level-chip { background: #fff1cf; color: #775600; text-transform: capitalize; }
+.support-label { display: inline-block; margin: 0 0 8px; padding: 6px 10px; border-radius: 10px; background: #fff2f6; color: #a03b65; font-size: .76rem; font-weight: 800; }
 .learning-main h1 { font-size: clamp(1.25rem, 5.2vw, 2rem); line-height: 1.25; margin: 0 auto 8px; max-width: 700px; text-wrap: balance; }
 .mission-story { color: var(--muted); font-size: .9rem; line-height: 1.45; margin: 0 auto 10px; max-width: 680px; text-wrap: pretty; }
 .translation-card { background: #eaf0ff; color: #284397; padding: 10px 14px; border-radius: 14px; margin: 10px auto; max-width: 680px; text-align: left; }.translation-card small { font-size: .65rem; font-weight: 800; }.translation-card p { margin: 3px 0 0; }

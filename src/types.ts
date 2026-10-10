@@ -1,5 +1,7 @@
 export type Language = 'ko' | 'en'
-export type Difficulty = 'easy' | 'medium' | 'challenge' | 'auto'
+export type MathLevel = 'foundation' | 'core' | 'advanced' | 'expert' | 'master'
+export type LegacyDifficulty = 'easy' | 'medium' | 'challenge'
+export type Difficulty = MathLevel | LegacyDifficulty | 'auto'
 export type MissionId = 'pizza' | 'shopping' | 'travel' | 'nature' | 'creator'
 
 export interface AnswerRecord {
@@ -11,6 +13,8 @@ export interface AnswerRecord {
   hintsUsed: number
   answeredAt: string
   answer: string
+  objectiveId?: string
+  supportAttempt?: boolean
 }
 
 export interface MissionProgress {
@@ -29,10 +33,22 @@ export interface Profile {
   year: number | null
   language: Language
   difficulty: Difficulty
+  /** Independent from school year. Added in 1.2; legacy records are migrated on read. */
+  mathLevel: MathLevel
+  adaptiveDifficulty: boolean
+  diagnostic?: DiagnosticResult
   unitDifficulties: Partial<Record<MissionId, Difficulty>>
   xp: number
   createdAt: string
   updatedAt: string
+}
+
+export interface DiagnosticResult {
+  completedAt: string
+  score: number
+  total: number
+  recommendedLevel: MathLevel
+  applied: boolean
 }
 
 export interface AppBackup {

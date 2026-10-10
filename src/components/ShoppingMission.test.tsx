@@ -2,8 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildShoppingQuestions, shoppingLocalise } from '../shoppingProblems'
-import { completeMissionWithReward, defaultProfiles, getAnswers, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, saveProgress } from '../storage'
-import type { Language, MathLevel } from '../types'
+import { completeMissionWithReward, defaultProfiles, getAnswers, getProfiles, getProgress, initialiseProfiles, resetDatabaseConnectionForTests, saveAnswer, saveProfile, saveProgress } from '../storage'
+import type { AnswerRecord, Language, MathLevel } from '../types'
 import { ShoppingMission } from './ShoppingMission'
 
 const clearDatabase = async () => {
@@ -20,7 +20,7 @@ const profileFor = (level: MathLevel = 'foundation', language: Language = 'ko', 
 })
 
 const mission = (overrides: Partial<React.ComponentProps<typeof ShoppingMission>> = {}) => ({
-  profile: profileFor(), history: [], initialStep: 0, initialScore: 0, initialTotal: 3, wasCompleted: false,
+  profile: profileFor(), history: [], initialStep: 0, initialScore: 0, initialTotal: 3, initialAttemptIds: [], wasCompleted: false,
   onExit: vi.fn(), onComplete: vi.fn(), onDataChanged: vi.fn(), ...overrides,
 })
 
@@ -142,19 +142,21 @@ describe('ShoppingMission', () => {
     await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
     expect(await screen.findByText('결제 성공!')).toBeInTheDocument()
     await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({
-      currentStep: 0, score: 1, total: 1, missionState: { paymentComplete: true, runActive: true },
+      currentStep: 0, score: 1, total: 1, missionState: { paymentComplete: true, learningLevel: 'foundation', runActive: true },
     }))
     first.unmount()
 
     const saved = (await getProgress('gayul'))[0]
     const history = await getAnswers('gayul')
     render(<ShoppingMission {...mission({
-      history, initialStep: saved.currentStep, initialScore: saved.score, initialTotal: saved.total,
+      profile: profileFor('master'), history, initialStep: saved.currentStep, initialScore: saved.score, initialTotal: saved.total,
       initialCart: saved.missionState?.cart, initialHintLevel: saved.missionState?.hintLevel,
       initialAttemptIds: saved.missionState?.attemptIds, initialSupportAttempt: saved.missionState?.supportAttempt,
+      initialQuestionIds: saved.missionState?.questionIds, initialLearningLevel: saved.missionState?.learningLevel,
       initialPaymentComplete: saved.missionState?.paymentComplete,
     })} />)
 
+    expect(screen.getByRole('heading', { name: shoppingLocalise(buildShoppingQuestions(profileFor(), [])[0].prompt, 'ko') })).toBeInTheDocument()
     expect(screen.getByText('결제 성공!')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'YULI 영수증' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '계산대에서 결제' })).not.toBeInTheDocument()
@@ -164,6 +166,51 @@ describe('ShoppingMission', () => {
       currentStep: 1, score: 1, total: 1, missionState: { paymentComplete: false, runActive: true },
     }))
     expect(await getAnswers('gayul')).toHaveLength(1)
+  })
+
+  it('recovers active-run attempts from legacy progress without attempt IDs', async () => {
+    const questionId = buildShoppingQuestions(profileFor(), [])[0].id
+    const history: AnswerRecord[] = [
+      { id: 'older-session', profileId: 'gayul', missionId: 'shopping', questionId, correct: true, hintsUsed: 0, answeredAt: '2026-01-01T00:00:00.000Z', answer: '[]' },
+      { id: 'legacy-current-1', profileId: 'gayul', missionId: 'shopping', questionId, correct: false, hintsUsed: 1, answeredAt: '2026-02-01T00:00:00.000Z', answer: '[]' },
+      { id: 'legacy-current-2', profileId: 'gayul', missionId: 'shopping', questionId, correct: true, hintsUsed: 0, answeredAt: '2026-02-02T00:00:00.000Z', answer: '[]' },
+      { id: 'after-progress', profileId: 'gayul', missionId: 'shopping', questionId, correct: true, hintsUsed: 0, answeredAt: '2026-03-01T00:00:00.000Z', answer: '[]' },
+    ]
+    render(<ShoppingMission {...mission({
+      history, initialStep: 1, initialScore: 1, initialTotal: 2,
+      initialAttemptIds: undefined,
+      initialProgressUpdatedAt: '2026-02-03T00:00:00.000Z',
+    })} />)
+
+    await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({
+      currentStep: 1, score: 1, total: 2,
+      missionState: { attemptIds: ['legacy-current-1', 'legacy-current-2'] },
+    }))
+  })
+
+  it('restarts safely when legacy attempts cannot be reconstructed without deleting records or XP', async () => {
+    const [gayul, hayul] = await initialiseProfiles()
+    await saveProfile({ ...gayul, xp: 80 })
+    await saveProfile(hayul)
+    const questionId = buildShoppingQuestions(profileFor(), [])[0].id
+    const history: AnswerRecord[] = [
+      { id: 'uncertain-1', profileId: 'gayul', missionId: 'shopping', questionId, correct: false, hintsUsed: 1, answeredAt: '2026-02-01T00:00:00.000Z', answer: '[]' },
+      { id: 'uncertain-2', profileId: 'gayul', missionId: 'shopping', questionId, correct: false, hintsUsed: 2, answeredAt: '2026-02-02T00:00:00.000Z', answer: '[]' },
+    ]
+    for (const answer of history) await saveAnswer(answer)
+    render(<ShoppingMission {...mission({
+      history, initialStep: 1, initialScore: 2, initialTotal: 2,
+      initialAttemptIds: undefined,
+      initialCart: { banana: 3 }, initialPaymentComplete: true,
+      initialProgressUpdatedAt: '2026-02-03T00:00:00.000Z',
+    })} />)
+
+    expect(screen.getByText('1/3')).toBeInTheDocument()
+    expect(screen.queryByText('결제 성공!')).not.toBeInTheDocument()
+    await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({ currentStep: 0, score: 0, total: 0 }))
+    expect((await getAnswers('gayul')).map((answer) => answer.id)).toEqual(['uncertain-1', 'uncertain-2'])
+    expect((await getProfiles()).find((profile) => profile.id === 'gayul')?.xp).toBe(80)
+    expect((await getProfiles()).find((profile) => profile.id === 'hayul')?.xp).toBe(0)
   })
 
   it('restores only the active run attempts and reports exact final aggregates', async () => {

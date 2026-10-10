@@ -29,6 +29,10 @@ export interface MissionProgress {
     cart?: Record<string, number>
     hintLevel?: number
     attemptIds?: string[]
+    /** Exact question set for a resumable run, independent of later difficulty changes. */
+    questionIds?: string[]
+    /** Learning level frozen for the current shopping run. */
+    learningLevel?: MathLevel
     supportAttempt?: boolean
     runActive?: boolean
     /** A successful checkout waiting for the learner to advance. */

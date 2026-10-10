@@ -184,10 +184,13 @@ export function validateBackup(value: unknown): value is AppBackup {
         && Object.values(state.cart).every((quantity) => Number.isInteger(quantity) && quantity >= 0 && quantity <= 9))
       const validAttempts = state.attemptIds === undefined || (Array.isArray(state.attemptIds)
         && state.attemptIds.every((id) => typeof id === 'string' && id.length > 0) && new Set(state.attemptIds).size === state.attemptIds.length)
+      const validQuestions = state.questionIds === undefined || (Array.isArray(state.questionIds) && state.questionIds.length === 3
+        && state.questionIds.every((id) => typeof id === 'string' && id.startsWith('shopping-v12-')) && new Set(state.questionIds).size === state.questionIds.length)
+      const validLearningLevel = state.learningLevel === undefined || mathLevels.includes(state.learningLevel)
       const validSupport = state.supportAttempt === undefined || typeof state.supportAttempt === 'boolean'
       const validRun = state.runActive === undefined || typeof state.runActive === 'boolean'
       const validPayment = state.paymentComplete === undefined || typeof state.paymentComplete === 'boolean'
-      return validHint && validCart && validAttempts && validSupport && validRun && validPayment
+      return validHint && validCart && validAttempts && validQuestions && validLearningLevel && validSupport && validRun && validPayment
     })
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultProfiles } from './storage'
-import { buildShoppingQuestions, calculateCart, productUnitPriceCents, productUnitPriceLabel, shoppingReviewPrompt, validateShoppingCart } from './shoppingProblems'
+import { buildShoppingQuestions, calculateCart, productUnitPriceCents, productUnitPriceLabel, shoppingQuestionsFromQuestionId, shoppingReviewPrompt, validateShoppingCart } from './shoppingProblems'
 import type { AnswerRecord, MathLevel, Profile } from './types'
 
 const profileFor = (level: MathLevel, year: number): Profile => ({
@@ -82,5 +82,11 @@ describe('shopping problem bank', () => {
     expect(shoppingReviewPrompt(question.id, 'ko')).toBe(question.prompt.ko)
     expect(shoppingReviewPrompt(question.id, 'en')).toBe(question.prompt.en)
     expect(shoppingReviewPrompt('shopping-legacy-unknown', 'en')).toBeNull()
+  })
+
+  it('reconstructs the complete original question set from a stable question ID', () => {
+    const original = buildShoppingQuestions(profileFor('expert', 7), [])
+    expect(shoppingQuestionsFromQuestionId(original[1].id)?.map((question) => question.id)).toEqual(original.map((question) => question.id))
+    expect(shoppingQuestionsFromQuestionId('shopping-legacy-unknown')).toBeNull()
   })
 })

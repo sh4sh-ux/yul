@@ -235,6 +235,14 @@ function high(level: 'expert' | 'master', year7: boolean): ScenarioInput[] {
 
 const scenariosFor = (level: MathLevel, year7: boolean) => level === 'foundation' ? foundation(year7) : level === 'core' ? core(year7) : level === 'advanced' ? advanced(year7) : high(level, year7)
 
+const materialiseShoppingQuestions = (level: MathLevel, year7: boolean): ShoppingQuestion[] => scenariosFor(level, year7).map((item) => {
+  const { slug, ...question } = item
+  return {
+    ...question, id: `shopping-v12-${year7 ? 'y7' : 'y5'}-${level}-${slug}`, level,
+    curriculumBand: level === 'master' ? 'extension' : 'core', stageName: stages[question.stage],
+  }
+})
+
 export function resolveShoppingDifficulty(profile: Profile, history: AnswerRecord[]): MathLevel {
   const override = profile.unitDifficulties.shopping
   const configured = override && override !== 'auto' ? normaliseMathLevel(override) : profileMathLevel(profile)
@@ -244,19 +252,18 @@ export function resolveShoppingDifficulty(profile: Profile, history: AnswerRecor
 export function buildShoppingQuestions(profile: Profile, history: AnswerRecord[]): ShoppingQuestion[] {
   const level = resolveShoppingDifficulty(profile, history)
   const year7 = (profile.year ?? 5) >= 7
-  return scenariosFor(level, year7).map((item) => {
-    const { slug, ...question } = item
-    return {
-      ...question, id: `shopping-v12-${year7 ? 'y7' : 'y5'}-${level}-${slug}`, level,
-      curriculumBand: level === 'master' ? 'extension' : 'core', stageName: stages[question.stage],
-    }
-  })
+  return materialiseShoppingQuestions(level, year7)
 }
 
-export function shoppingReviewPrompt(questionId: string, language: Language): string | null {
+export function shoppingQuestionsFromQuestionId(questionId: string): ShoppingQuestion[] | null {
   const match = /^shopping-v12-(y5|y7)-(foundation|core|advanced|expert|master)-(.+)$/.exec(questionId)
   if (!match) return null
   const [, yearBand, level, slug] = match
-  const item = scenariosFor(level as MathLevel, yearBand === 'y7').find((candidate) => candidate.slug === slug)
-  return item ? shoppingLocalise(item.prompt, language) : null
+  const questions = materialiseShoppingQuestions(level as MathLevel, yearBand === 'y7')
+  return questions.some((question) => question.id === questionId && question.id.endsWith(`-${slug}`)) ? questions : null
+}
+
+export function shoppingReviewPrompt(questionId: string, language: Language): string | null {
+  const question = shoppingQuestionsFromQuestionId(questionId)?.find((candidate) => candidate.id === questionId)
+  return question ? shoppingLocalise(question.prompt, language) : null
 }

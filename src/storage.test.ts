@@ -41,6 +41,23 @@ describe('IndexedDB learning repository', () => {
     expect(await getAnswers('gayul')).toMatchObject([{ id: 'legacy-name-answer', profileId: 'gayul' }])
     expect(await getAnswers('hayul')).toHaveLength(0)
   })
+  it('preserves a customised legacy English name with its profile data', async () => {
+    await initialiseProfiles()
+    await saveAnswer({ id: 'luna-answer', profileId: 'hayul', missionId: 'shopping', questionId: 'legacy', correct: true, hintsUsed: 0, answeredAt: '2026-01-01T00:00:00.000Z', answer: '[]' })
+    const backup = await createBackup()
+    const legacy = {
+      ...backup,
+      profiles: backup.profiles.map(({ names: _names, ...profile }) => profile.id === 'hayul'
+        ? { ...profile, language: 'en', name: 'Moon', year: 7, xp: 90 }
+        : profile),
+    }
+    await restoreBackup(legacy)
+    expect((await getProfiles()).find((profile) => profile.id === 'hayul')).toMatchObject({
+      id: 'hayul', language: 'en', name: '하율', names: { ko: '하율', en: 'Moon' }, year: 7, xp: 90,
+    })
+    expect(await getAnswers('hayul')).toMatchObject([{ id: 'luna-answer', profileId: 'hayul' }])
+    expect(await getAnswers('gayul')).toHaveLength(0)
+  })
   it('returns each profile answer history in chronological order', async () => {
     await initialiseProfiles()
     await saveAnswer({ id: 'a-first-key', profileId: 'gayul', missionId: 'pizza', questionId: 'newer', correct: true, hintsUsed: 0, answeredAt: '2026-01-03T00:00:00.000Z', answer: '3/4' })
@@ -69,11 +86,14 @@ describe('IndexedDB learning repository', () => {
   })
   it('round-trips a pending successful payment while accepting older backups without it', async () => {
     await initialiseProfiles()
-    await saveProgress({ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 1, score: 1, total: 1, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, attemptIds: ['paid-1'], runActive: true, paymentComplete: true } })
+    const questionIds = ['shopping-v12-y5-core-breakfast', 'shopping-v12-y5-core-quarter-off', 'shopping-v12-y5-core-family-shop']
+    await saveProgress({ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 1, score: 1, total: 1, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, attemptIds: ['paid-1'], questionIds, learningLevel: 'core', runActive: true, paymentComplete: true } })
     const backup = await createBackup()
     expect(validateBackup(backup)).toBe(true)
     await restoreBackup(backup)
     expect((await getProgress('gayul'))[0].missionState?.paymentComplete).toBe(true)
+    expect((await getProgress('gayul'))[0].missionState?.questionIds).toEqual(questionIds)
+    expect((await getProgress('gayul'))[0].missionState?.learningLevel).toBe('core')
 
     const legacy = { ...backup, progress: backup.progress.map(({ missionState, ...progress }) => ({ ...progress, missionState: missionState && { ...missionState, paymentComplete: undefined } })) }
     expect(validateBackup(legacy)).toBe(true)

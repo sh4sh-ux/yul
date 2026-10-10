@@ -1,8 +1,30 @@
 import { useEffect, useRef, useState } from 'react'
 import { levelRank } from '../mathLevels'
-import { buildShoppingQuestions, calculateCart, formatNZD, productUnitPriceCents, productUnitPriceLabel, shoppingLocalise, validateShoppingCart } from '../shoppingProblems'
+import { buildShoppingQuestions, calculateCart, formatNZD, productUnitPriceCents, productUnitPriceLabel, shoppingLocalise, shoppingQuestionsFromQuestionId, validateShoppingCart } from '../shoppingProblems'
 import { saveAnswerAndProgress, saveProgress } from '../storage'
 import type { AnswerRecord, Profile } from '../types'
+
+function recoverShoppingAttempts(history: AnswerRecord[], profileId: string, attemptIds: string[] | undefined,
+  total: number, score: number, step: number, progressUpdatedAt?: string): AnswerRecord[] | null {
+  const shoppingHistory = history
+    .filter((answer) => answer.profileId === profileId && answer.missionId === 'shopping')
+    .slice().sort((a, b) => a.answeredAt.localeCompare(b.answeredAt))
+  if (attemptIds !== undefined) {
+    const ids = new Set(attemptIds)
+    return shoppingHistory.filter((answer) => ids.has(answer.id))
+  }
+  if (total === 0) return []
+  const eligible = progressUpdatedAt ? shoppingHistory.filter((answer) => answer.answeredAt <= progressUpdatedAt) : shoppingHistory
+  const candidate = eligible.slice(-total)
+  if (candidate.length !== total || candidate.filter((answer) => answer.correct).length !== score) return null
+  const questions = shoppingQuestionsFromQuestionId(candidate[0]?.questionId ?? '')
+  if (!questions || candidate.some((answer) => !questions.some((question) => question.id === answer.questionId))) return null
+  if (candidate.some((answer) => questions.findIndex((question) => question.id === answer.questionId) > step)) return null
+  for (let completedStep = 0; completedStep < step; completedStep += 1) {
+    if (!candidate.some((answer) => answer.questionId === questions[completedStep].id && answer.correct)) return null
+  }
+  return candidate
+}
 
 const copy = {
   ko: {
@@ -32,7 +54,7 @@ export function ShoppingIntro({ profile, onBack, onBegin }: { profile: Profile; 
   return <div className="mission-shell intro-screen shopping-intro"><button className="back-button" onClick={onBack}>← {c.back}</button><div className="intro-art shopping-intro-art"><span>🛒</span><i>★</i><i>NZ$</i></div><div className="intro-copy"><span className="eyebrow">{c.eyebrow}</span><h1>{c.title}</h1><p>{c.intro}</p><p className="educational-price-note">ⓘ {c.educational}</p><div className="mission-meta"><span>◷ {c.minutes}</span><span>★ {c.reward}</span></div><button className="button primary full" onClick={onBegin}>{c.begin} →</button></div></div>
 }
 
-export function ShoppingMission({ profile, history, initialStep, initialScore, initialTotal, initialCart, initialHintLevel, initialAttemptIds, initialSupportAttempt, initialPaymentComplete, wasCompleted, onExit, onComplete, onDataChanged }: {
+export function ShoppingMission({ profile, history, initialStep, initialScore, initialTotal, initialCart, initialHintLevel, initialAttemptIds, initialQuestionIds, initialLearningLevel, initialProgressUpdatedAt, initialSupportAttempt, initialPaymentComplete, wasCompleted, onExit, onComplete, onDataChanged }: {
   profile: Profile
   history: AnswerRecord[]
   initialStep: number
@@ -41,6 +63,9 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   initialCart?: Record<string, number>
   initialHintLevel?: number
   initialAttemptIds?: string[]
+  initialQuestionIds?: string[]
+  initialLearningLevel?: Profile['mathLevel']
+  initialProgressUpdatedAt?: string
   initialSupportAttempt?: boolean
   initialPaymentComplete?: boolean
   wasCompleted: boolean
@@ -50,17 +75,24 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
 }) {
   const language = profile.language
   const c = copy[language]
-  const [questions] = useState(() => buildShoppingQuestions(profile, history))
-  const [step, setStep] = useState(Math.min(initialStep, 2))
-  const [cart, setCart] = useState<Record<string, number>>(() => initialCart ?? {})
-  const [feedback, setFeedback] = useState<'correct' | 'incorrect' | 'over' | null>(() => initialPaymentComplete ? 'correct' : null)
-  const [hintLevel, setHintLevel] = useState(Math.min(2, initialHintLevel ?? 0))
+  const [restoredRun] = useState(() => recoverShoppingAttempts(history, profile.id, initialAttemptIds, initialTotal, initialScore, initialStep, initialProgressUpdatedAt))
+  const legacyRestart = restoredRun === null
+  const [step, setStep] = useState(legacyRestart ? 0 : Math.min(initialStep, 2))
+  const [cart, setCart] = useState<Record<string, number>>(() => legacyRestart ? {} : initialCart ?? {})
+  const [feedback, setFeedback] = useState<'correct' | 'incorrect' | 'over' | null>(() => !legacyRestart && initialPaymentComplete ? 'correct' : null)
+  const [hintLevel, setHintLevel] = useState(legacyRestart ? 0 : Math.min(2, initialHintLevel ?? 0))
   const [translation, setTranslation] = useState(false)
-  const [attempts, setAttempts] = useState<AnswerRecord[]>(() => {
-    const attemptIds = new Set(initialAttemptIds ?? [])
-    return history.filter((answer) => answer.profileId === profile.id && answer.missionId === 'shopping' && attemptIds.has(answer.id))
+  const [attempts, setAttempts] = useState<AnswerRecord[]>(() => restoredRun ?? [])
+  const [questions] = useState(() => {
+    if (!legacyRestart && initialQuestionIds?.length === 3) {
+      const restored = shoppingQuestionsFromQuestionId(initialQuestionIds[0])
+      if (restored && restored.every((question, index) => question.id === initialQuestionIds[index])
+        && (!initialLearningLevel || restored[0].level === initialLearningLevel)) return restored
+    }
+    const anchored = attempts.length ? shoppingQuestionsFromQuestionId(attempts[attempts.length - 1].questionId) : null
+    return anchored ?? buildShoppingQuestions(profile, history)
   })
-  const [supportAttempt, setSupportAttempt] = useState(initialSupportAttempt ?? false)
+  const [supportAttempt, setSupportAttempt] = useState(legacyRestart ? false : initialSupportAttempt ?? false)
   const [submitting, setSubmitting] = useState(false)
   const submissionLocked = useRef(initialPaymentComplete ?? false)
   const completionLocked = useRef(false)
@@ -74,7 +106,7 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
       profileId: profile.id, missionId: 'shopping', completed: wasCompleted, currentStep: step,
       score: wasCompleted ? initialScore : attempts.filter((attempt) => attempt.correct).length,
       total: wasCompleted ? initialTotal : attempts.length,
-      updatedAt: new Date().toISOString(), missionState: { cart, hintLevel, attemptIds: attempts.map((attempt) => attempt.id), supportAttempt, runActive: true, paymentComplete: feedback === 'correct' },
+      updatedAt: new Date().toISOString(), missionState: { cart, hintLevel, attemptIds: attempts.map((attempt) => attempt.id), questionIds: questions.map((item) => item.id), learningLevel: questions[0].level, supportAttempt, runActive: true, paymentComplete: feedback === 'correct' },
     })
   }, [profile.id, step, cart, hintLevel, attempts, supportAttempt, feedback, wasCompleted, initialScore, initialTotal])
 
@@ -106,7 +138,7 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
         profileId: profile.id, missionId: 'shopping', completed: wasCompleted, currentStep: step,
         score: wasCompleted ? initialScore : nextAttempts.filter((attempt) => attempt.correct).length,
         total: wasCompleted ? initialTotal : nextAttempts.length, updatedAt: new Date().toISOString(),
-        missionState: { cart, hintLevel, attemptIds: nextAttempts.map((attempt) => attempt.id), supportAttempt, runActive: true, paymentComplete: correct },
+        missionState: { cart, hintLevel, attemptIds: nextAttempts.map((attempt) => attempt.id), questionIds: questions.map((item) => item.id), learningLevel: questions[0].level, supportAttempt, runActive: true, paymentComplete: correct },
       })
       setAttempts(nextAttempts)
       setFeedback(correct ? 'correct' : overBudget ? 'over' : 'incorrect')

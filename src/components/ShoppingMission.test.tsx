@@ -52,7 +52,7 @@ describe('ShoppingMission', () => {
     await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
     expect(await screen.findByText('결제 성공!')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'YULI 영수증' })).toBeInTheDocument()
-    await waitFor(async () => expect((await getAnswers('gayul'))[0]).toMatchObject({ missionId: 'shopping', correct: true, objectiveId: 'percent-discount' }))
+    await waitFor(async () => expect((await getAnswers('gayul'))[0]).toMatchObject({ missionId: 'shopping', correct: true, objectiveId: 'percent-discount', supportAttempt: false }))
   })
 
   it('explains an over-budget trolley and allows editing before retry', async () => {
@@ -63,6 +63,23 @@ describe('ShoppingMission', () => {
     expect(await screen.findByText('예산을 초과했어요.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '장바구니 고치기' }))
     expect(screen.getByRole('button', { name: /우유 빼기/ })).toBeEnabled()
+  })
+
+  it('marks only post-error guided attempts as supported', async () => {
+    const user = userEvent.setup()
+    render(<ShoppingMission {...mission()} />)
+    await add(user, /사과 추가/)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    await user.click(await screen.findByRole('button', { name: '장바구니 고치기' }))
+    expect(screen.getByText('힌트를 활용한 지원형 재도전')).toBeInTheDocument()
+    await add(user, /사과 추가/)
+    await add(user, /우유 추가/)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    expect(await screen.findByText('결제 성공!')).toBeInTheDocument()
+    await waitFor(async () => expect(await getAnswers('gayul')).toMatchObject([
+      { correct: false, supportAttempt: false, hintsUsed: 0 },
+      { correct: true, supportAttempt: true, hintsUsed: 1 },
+    ]))
   })
 
   it.each([
@@ -91,6 +108,17 @@ describe('ShoppingMission', () => {
     expect(screen.getByText(question.prompt.ko)).toBeInTheDocument()
   })
 
+  it.each([
+    ['ko', 'NZ$0.90 / 개', 'NZ$4.25 / L'],
+    ['en', 'NZ$0.90 / egg', 'NZ$4.25 / L'],
+  ] as const)('renders item and litre unit prices with explicit metadata in %s', (language, eggPrice, juicePrice) => {
+    const profile = profileFor('advanced', language, 7)
+    render(<ShoppingMission {...mission({ profile, initialStep: 2 })} />)
+    expect(screen.getByText(eggPrice)).toBeInTheDocument()
+    expect(screen.getByText(juicePrice)).toBeInTheDocument()
+    expect(screen.getByText('NZ$1.00 / 100g')).toBeInTheDocument()
+  })
+
   it('restores the cart and hint state after reload and keeps profiles separate', async () => {
     await saveProgress({ profileId: 'hayul', missionId: 'shopping', completed: false, currentStep: 2, score: 0, total: 3, updatedAt: '2026-01-01T00:00:00.000Z', missionState: { cart: { banana: 2 }, hintLevel: 1 } })
     const { unmount } = render(<ShoppingMission {...mission({ initialCart: { apple: 2, milk: 1 }, initialHintLevel: 1 })} />)
@@ -104,6 +132,49 @@ describe('ShoppingMission', () => {
     render(<ShoppingMission {...mission({ initialStep: saved.currentStep, initialCart: saved.missionState?.cart, initialHintLevel: saved.missionState?.hintLevel })} />)
     const restoredCard = screen.getByRole('button', { name: /사과 추가/ }).closest('article')
     expect(within(restoredCard as HTMLElement).getByText('2')).toBeInTheDocument()
+  })
+
+  it('restores only the active run attempts and reports exact final aggregates', async () => {
+    const user = userEvent.setup()
+    const first = render(<ShoppingMission {...mission()} />)
+    await add(user, /사과 추가/)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    await user.click(await screen.findByRole('button', { name: '장바구니 고치기' }))
+    await add(user, /사과 추가/)
+    await add(user, /우유 추가/)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    await user.click(await screen.findByRole('button', { name: /다음 쇼핑/ }))
+    await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({
+      currentStep: 1, score: 1, total: 2, missionState: { runActive: true, supportAttempt: false },
+    }))
+    first.unmount()
+
+    const progress = (await getProgress('gayul'))[0]
+    const currentRun = await getAnswers('gayul')
+    const oldSession = { ...currentRun[0], id: 'old-session-answer', correct: true, hintsUsed: 2, supportAttempt: false }
+    const onComplete = vi.fn()
+    render(<ShoppingMission {...mission({
+      history: [oldSession, ...currentRun], initialStep: progress.currentStep, initialScore: progress.score,
+      initialTotal: progress.total, initialCart: progress.missionState?.cart, initialHintLevel: progress.missionState?.hintLevel,
+      initialAttemptIds: progress.missionState?.attemptIds, initialSupportAttempt: progress.missionState?.supportAttempt, onComplete,
+    })} />)
+    await add(user, /바나나 추가/, 3)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    await user.click(await screen.findByRole('button', { name: /다음 쇼핑/ }))
+    await add(user, /빵 추가/)
+    await add(user, /치즈 500g 추가/)
+    await add(user, /사과 추가/, 2)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    await user.click(await screen.findByRole('button', { name: /미션 완료/ }))
+
+    const completedAttempts = onComplete.mock.calls[0][0] as Array<{ id: string; correct: boolean; hintsUsed: number }>
+    expect(completedAttempts).toHaveLength(4)
+    expect(completedAttempts.some((attempt) => attempt.id === oldSession.id)).toBe(false)
+    expect(completedAttempts.filter((attempt) => attempt.correct)).toHaveLength(3)
+    expect(completedAttempts.reduce((sum, attempt) => sum + attempt.hintsUsed, 0)).toBe(1)
+    await waitFor(async () => expect((await getProgress('gayul'))[0]).toMatchObject({
+      completed: true, score: 3, total: 4, missionState: { runActive: false, attemptIds: [] },
+    }))
   })
 
   it('preserves completion and reports zero new reward eligibility on replay', async () => {

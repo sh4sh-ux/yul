@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -103,5 +103,35 @@ describe('YULI app flow', () => {
     expect(screen.getByText('+40')).toBeInTheDocument()
     expect((await getProfiles()).find((profile) => profile.id === 'gayul')?.xp).toBe(40)
     expect((await getProfiles()).find((profile) => profile.id === 'hayul')?.xp).toBe(0)
+  })
+
+  it('resumes the active shopping run at the saved stage after an app reload', async () => {
+    const user = userEvent.setup()
+    const [gayulDefault, hayul] = defaultProfiles()
+    const gayul = { ...gayulDefault, year: 5 as const, difficulty: 'foundation' as const, mathLevel: 'foundation' as const, adaptiveDifficulty: false }
+    await saveProfile(gayul)
+    await saveProfile(hayul)
+    await setSelectedProfile('gayul')
+    const first = render(<App />)
+    await user.click(await screen.findByRole('button', { name: /쇼핑 챌린지/ }))
+    await user.click(screen.getByRole('button', { name: /장보러 가기/ }))
+    const add = async (name: RegExp, count = 1) => {
+      const button = screen.getByRole('button', { name })
+      for (let index = 0; index < count; index += 1) await user.click(button)
+    }
+    await add(/사과 추가/, 2); await add(/우유 추가/)
+    await user.click(screen.getByRole('button', { name: '계산대에서 결제' }))
+    await user.click(await screen.findByRole('button', { name: /다음 쇼핑/ }))
+    await waitFor(async () => expect((await getProgress('gayul')).find((item) => item.missionId === 'shopping')).toMatchObject({
+      currentStep: 1, score: 1, total: 1, missionState: { runActive: true, attemptIds: [expect.any(String)] },
+    }))
+    first.unmount()
+
+    render(<App />)
+    const shopping = await screen.findByRole('button', { name: /쇼핑 챌린지/ })
+    expect(shopping).toHaveTextContent('이어서 하기')
+    await user.click(shopping)
+    await user.click(screen.getByRole('button', { name: /장보러 가기/ }))
+    expect(await screen.findByRole('heading', { name: '바나나 3개를 사고 계산대로 가세요.' })).toBeInTheDocument()
   })
 })

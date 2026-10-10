@@ -26,6 +26,7 @@ export default function App() {
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null
   const pizzaProgress = progress.find((item) => item.missionId === 'pizza')
   const shoppingProgress = progress.find((item) => item.missionId === 'shopping')
+  const shoppingRunActive = shoppingProgress?.missionState?.runActive ?? false
 
   const { needRefresh: [needRefresh, setNeedRefresh], offlineReady: [offlineReady, setOfflineReady], updateServiceWorker } = useRegisterSW()
 
@@ -79,7 +80,7 @@ export default function App() {
   if (screen === 'mission-intro') return <MissionIntro profile={selected} onBack={() => setScreen('map')} onBegin={() => setScreen('mission')} />
   if (screen === 'mission') return <PizzaMission profile={selected} history={answers} initialStep={pizzaProgress?.completed ? 0 : pizzaProgress?.currentStep ?? 0} initialScore={pizzaProgress?.score ?? 0} initialTotal={pizzaProgress?.total ?? 3} wasCompleted={pizzaProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={(attempts, first) => completeMission('pizza', 30, attempts, first)} onDataChanged={() => refreshData(selected.id)} />
   if (screen === 'shopping-intro') return <ShoppingIntro profile={selected} onBack={() => setScreen('map')} onBegin={() => setScreen('shopping-mission')} />
-  if (screen === 'shopping-mission') return <ShoppingMission profile={selected} history={answers} initialStep={shoppingProgress?.completed ? 0 : shoppingProgress?.currentStep ?? 0} initialScore={shoppingProgress?.score ?? 0} initialTotal={shoppingProgress?.total ?? 3} initialCart={shoppingProgress?.completed ? {} : shoppingProgress?.missionState?.cart} initialHintLevel={shoppingProgress?.completed ? 0 : shoppingProgress?.missionState?.hintLevel} wasCompleted={shoppingProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={(attempts, first) => completeMission('shopping', 40, attempts, first)} onDataChanged={() => refreshData(selected.id)} />
+  if (screen === 'shopping-mission') return <ShoppingMission profile={selected} history={answers} initialStep={shoppingProgress?.completed && !shoppingRunActive ? 0 : shoppingProgress?.currentStep ?? 0} initialScore={shoppingProgress?.score ?? 0} initialTotal={shoppingProgress?.total ?? 0} initialCart={shoppingProgress?.completed && !shoppingRunActive ? {} : shoppingProgress?.missionState?.cart} initialHintLevel={shoppingProgress?.completed && !shoppingRunActive ? 0 : shoppingProgress?.missionState?.hintLevel} initialAttemptIds={shoppingProgress?.completed && !shoppingRunActive ? [] : shoppingProgress?.missionState?.attemptIds} initialSupportAttempt={shoppingProgress?.completed && !shoppingRunActive ? false : shoppingProgress?.missionState?.supportAttempt} wasCompleted={shoppingProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={(attempts, first) => completeMission('shopping', 40, attempts, first)} onDataChanged={() => refreshData(selected.id)} />
 
   return <AppShell profile={selected} screen={screen} onNavigate={(next) => { setUnavailable(''); setScreen(next) }} onSettings={() => setScreen('settings')}>
     {screen === 'home' && <HomeScreen profile={selected} pizzaProgress={pizzaProgress} shoppingProgress={shoppingProgress} onMission={() => setScreen('mission-intro')} onShopping={() => setScreen('shopping-intro')} onMap={() => setScreen('map')} />}

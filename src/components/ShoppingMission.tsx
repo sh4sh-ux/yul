@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { levelRank } from '../mathLevels'
-import { buildShoppingQuestions, calculateCart, formatNZD, shoppingLocalise, validateShoppingCart } from '../shoppingProblems'
-import { saveAnswer, saveProgress } from '../storage'
+import { buildShoppingQuestions, calculateCart, formatNZD, productUnitPriceCents, productUnitPriceLabel, shoppingLocalise, validateShoppingCart } from '../shoppingProblems'
+import { saveAnswerAndProgress, saveProgress } from '../storage'
 import type { AnswerRecord, Profile } from '../types'
 
 const copy = {
@@ -12,7 +12,7 @@ const copy = {
     budget: '예산', cart: '장바구니', empty: '상품의 + 버튼을 눌러 담아 보세요.', subtotal: '할인 전', discount: '할인', total: '결제 금액', remaining: '남은 예산',
     add: '추가', remove: '빼기', each: '개당', checkout: '계산대에서 결제', correct: '결제 성공!', incorrect: '조건을 다시 확인해 봐요.', over: '예산을 초과했어요.',
     next: '다음 쇼핑', complete: '미션 완료', retry: '장바구니 고치기', hint: '힌트', nextHint: '다음 힌트', translation: '번역 도움', closeTranslation: '번역 닫기',
-    conditions: '구매 조건', receipt: 'YULI 영수증', paid: '결제 완료', saved: '아낀 금액', unitPrice: '단위 가격 비교', extension: '확장 학습',
+    conditions: '구매 조건', receipt: 'YULI 영수증', paid: '결제 완료', saved: '아낀 금액', unitPrice: '단위 가격 비교', extension: '확장 학습', supported: '힌트를 활용한 지원형 재도전',
     resultTitle: '쇼핑 미션 완료!', resultBody: '예산, 할인, 단위 가격과 여러 구매 조건을 함께 해결했어요.', accuracy: '정답률', hints: '사용한 힌트', earned: '획득 XP', map: '탐험 지도로', again: '새 쇼핑 미션', completeLabel: '완료',
   },
   en: {
@@ -22,7 +22,7 @@ const copy = {
     budget: 'Budget', cart: 'Trolley', empty: 'Use a + button to add a product.', subtotal: 'Before discount', discount: 'Discount', total: 'Amount to pay', remaining: 'Budget left',
     add: 'Add', remove: 'Remove', each: 'each', checkout: 'Pay at checkout', correct: 'Payment approved!', incorrect: 'Check every condition again.', over: 'That is over budget.',
     next: 'Next shop', complete: 'Complete mission', retry: 'Edit trolley', hint: 'Hint', nextHint: 'Next hint', translation: 'Translation help', closeTranslation: 'Close translation',
-    conditions: 'Shopping conditions', receipt: 'YULI receipt', paid: 'Paid', saved: 'Saved', unitPrice: 'Unit-price comparison', extension: 'Extension learning',
+    conditions: 'Shopping conditions', receipt: 'YULI receipt', paid: 'Paid', saved: 'Saved', unitPrice: 'Unit-price comparison', extension: 'Extension learning', supported: 'Supported retry with hints',
     resultTitle: 'Shopping mission complete!', resultBody: 'You solved budgets, discounts, unit prices and multiple shopping conditions together.', accuracy: 'Accuracy', hints: 'Hints used', earned: 'XP earned', map: 'Back to map', again: 'New shopping mission', completeLabel: 'complete',
   },
 } as const
@@ -32,7 +32,7 @@ export function ShoppingIntro({ profile, onBack, onBegin }: { profile: Profile; 
   return <div className="mission-shell intro-screen shopping-intro"><button className="back-button" onClick={onBack}>← {c.back}</button><div className="intro-art shopping-intro-art"><span>🛒</span><i>★</i><i>NZ$</i></div><div className="intro-copy"><span className="eyebrow">{c.eyebrow}</span><h1>{c.title}</h1><p>{c.intro}</p><p className="educational-price-note">ⓘ {c.educational}</p><div className="mission-meta"><span>◷ {c.minutes}</span><span>★ {c.reward}</span></div><button className="button primary full" onClick={onBegin}>{c.begin} →</button></div></div>
 }
 
-export function ShoppingMission({ profile, history, initialStep, initialScore, initialTotal, initialCart, initialHintLevel, wasCompleted, onExit, onComplete, onDataChanged }: {
+export function ShoppingMission({ profile, history, initialStep, initialScore, initialTotal, initialCart, initialHintLevel, initialAttemptIds, initialSupportAttempt, wasCompleted, onExit, onComplete, onDataChanged }: {
   profile: Profile
   history: AnswerRecord[]
   initialStep: number
@@ -40,6 +40,8 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   initialTotal: number
   initialCart?: Record<string, number>
   initialHintLevel?: number
+  initialAttemptIds?: string[]
+  initialSupportAttempt?: boolean
   wasCompleted: boolean
   onExit: () => void
   onComplete: (attempts: AnswerRecord[], isFirstCompletion: boolean) => void
@@ -53,7 +55,11 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   const [feedback, setFeedback] = useState<'correct' | 'incorrect' | 'over' | null>(null)
   const [hintLevel, setHintLevel] = useState(Math.min(2, initialHintLevel ?? 0))
   const [translation, setTranslation] = useState(false)
-  const [attempts, setAttempts] = useState<AnswerRecord[]>([])
+  const [attempts, setAttempts] = useState<AnswerRecord[]>(() => {
+    const attemptIds = new Set(initialAttemptIds ?? [])
+    return history.filter((answer) => answer.profileId === profile.id && answer.missionId === 'shopping' && attemptIds.has(answer.id))
+  })
+  const [supportAttempt, setSupportAttempt] = useState(initialSupportAttempt ?? false)
   const [submitting, setSubmitting] = useState(false)
   const submissionLocked = useRef(false)
   const question = questions[step]
@@ -64,10 +70,11 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   useEffect(() => {
     void saveProgress({
       profileId: profile.id, missionId: 'shopping', completed: wasCompleted, currentStep: step,
-      score: wasCompleted ? initialScore : 0, total: wasCompleted ? initialTotal : 3,
-      updatedAt: new Date().toISOString(), missionState: { cart, hintLevel },
+      score: wasCompleted ? initialScore : attempts.filter((attempt) => attempt.correct).length,
+      total: wasCompleted ? initialTotal : attempts.length,
+      updatedAt: new Date().toISOString(), missionState: { cart, hintLevel, attemptIds: attempts.map((attempt) => attempt.id), supportAttempt, runActive: true },
     })
-  }, [profile.id, step, cart, hintLevel, wasCompleted, initialScore, initialTotal])
+  }, [profile.id, step, cart, hintLevel, attempts, supportAttempt, wasCompleted, initialScore, initialTotal])
 
   const changeQuantity = (productId: string, delta: number) => {
     setCart((current) => {
@@ -89,11 +96,17 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
     const record: AnswerRecord = {
       id: crypto.randomUUID(), profileId: profile.id, missionId: 'shopping', questionId: question.id,
       correct, hintsUsed: hintLevel, answeredAt: new Date().toISOString(),
-      answer: JSON.stringify(Object.entries(cart).sort(([a], [b]) => a.localeCompare(b))), objectiveId: question.objectiveId,
+      answer: JSON.stringify(Object.entries(cart).sort(([a], [b]) => a.localeCompare(b))), objectiveId: question.objectiveId, supportAttempt,
     }
+    const nextAttempts = [...attempts, record]
     try {
-      await saveAnswer(record)
-      setAttempts((items) => [...items, record])
+      await saveAnswerAndProgress(record, {
+        profileId: profile.id, missionId: 'shopping', completed: wasCompleted, currentStep: step,
+        score: wasCompleted ? initialScore : nextAttempts.filter((attempt) => attempt.correct).length,
+        total: wasCompleted ? initialTotal : nextAttempts.length, updatedAt: new Date().toISOString(),
+        missionState: { cart, hintLevel, attemptIds: nextAttempts.map((attempt) => attempt.id), supportAttempt, runActive: true },
+      })
+      setAttempts(nextAttempts)
       setFeedback(correct ? 'correct' : overBudget ? 'over' : 'incorrect')
       onDataChanged()
     } catch (error) {
@@ -107,6 +120,7 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
   const retry = () => {
     setFeedback(null)
     setHintLevel((level) => Math.max(1, level))
+    setSupportAttempt(true)
     submissionLocked.current = false
   }
 
@@ -117,28 +131,29 @@ export function ShoppingMission({ profile, history, initialStep, initialScore, i
       setFeedback(null)
       setHintLevel(0)
       setTranslation(false)
+      setSupportAttempt(false)
       submissionLocked.current = false
       return
     }
     await saveProgress({
       profileId: profile.id, missionId: 'shopping', completed: true, currentStep: 3,
-      score: attempts.filter((item) => item.correct).length, total: attempts.length,
-      updatedAt: new Date().toISOString(), missionState: { cart: {}, hintLevel: 0 },
+      score: wasCompleted ? initialScore : attempts.filter((item) => item.correct).length,
+      total: wasCompleted ? initialTotal : attempts.length,
+      updatedAt: new Date().toISOString(), missionState: { cart: {}, hintLevel: 0, attemptIds: [], supportAttempt: false, runActive: false },
     })
     onComplete(attempts, !wasCompleted)
   }
 
   return <div className="mission-shell learning-screen shopping-mission"><header className="mission-header"><button className="icon-button" onClick={onExit} aria-label={c.back}>×</button><div className="step-track shopping-track"><span style={{ width: `${(step + 1) / 3 * 100}%` }} /></div><strong>{step + 1}/3</strong></header>
     <main className="shopping-learning-main">
-      <section className="shopping-question"><div className="question-heading"><span className="stage-badge">{shoppingLocalise(question.stageName, language)}</span><span className="concept-chip">{shoppingLocalise(question.concept, language)}</span><span className="level-chip">L{levelRank(question.level)} · {question.level}{question.curriculumBand === 'extension' ? ` · ${c.extension}` : ''}</span></div><h1>{shoppingLocalise(question.prompt, language)}</h1><p>{shoppingLocalise(question.story, language)}</p><p className="educational-price-note">ⓘ {c.educational}</p>
+      <section className="shopping-question"><div className="question-heading"><span className="stage-badge">{shoppingLocalise(question.stageName, language)}</span><span className="concept-chip">{shoppingLocalise(question.concept, language)}</span><span className="level-chip">L{levelRank(question.level)} · {question.level}{question.curriculumBand === 'extension' ? ` · ${c.extension}` : ''}</span></div>{supportAttempt && <p className="support-label">{c.supported}</p>}<h1>{shoppingLocalise(question.prompt, language)}</h1><p>{shoppingLocalise(question.story, language)}</p><p className="educational-price-note">ⓘ {c.educational}</p>
         {translation && <div className="translation-card"><small>{otherLanguage === 'en' ? 'ENGLISH' : '한국어'}</small><p>{shoppingLocalise(question.prompt, otherLanguage)}</p><p>{shoppingLocalise(question.story, otherLanguage)}</p>{hintLevel > 0 && <p>💡 {shoppingLocalise(question.hints[hintLevel - 1], otherLanguage)}</p>}</div>}
       </section>
       <section className="market-workspace">
         <div className="market-area"><div className="market-sign"><span>YULI FRESH</span><strong>🥝 NZ SUPERMARKET</strong></div><div className="product-grid">{question.products.map((product) => {
           const quantity = cart[product.id] ?? 0
           const salePrice = product.discountPercent ? Math.round(product.priceCents * (100 - product.discountPercent) / 100) : product.priceCents
-          const unitCents = product.packSize >= 100 ? Math.round(salePrice * 100 / product.packSize) : Math.round(salePrice / product.packSize)
-          return <article className={`product-card ${quantity ? 'selected' : ''}`} key={product.id}><span className="product-icon" aria-hidden="true">{product.icon}</span><strong>{shoppingLocalise(product.name, language)}</strong><div className="product-price">{product.discountPercent ? <><del>{formatNZD(product.priceCents, language)}</del><b>{formatNZD(salePrice, language)}</b><small>-{product.discountPercent}%</small></> : <b>{formatNZD(product.priceCents, language)}</b>}</div>{product.packSize > 1 && <small>{formatNZD(unitCents, language)} / {product.packSize >= 100 ? '100g' : language === 'ko' ? '개' : 'unit'}</small>}<div className="quantity-control"><button disabled={quantity === 0 || feedback !== null} onClick={() => changeQuantity(product.id, -1)} aria-label={`${shoppingLocalise(product.name, language)} ${c.remove}`}>−</button><output aria-live="polite">{quantity}</output><button disabled={quantity === 9 || feedback !== null} onClick={() => changeQuantity(product.id, 1)} aria-label={`${shoppingLocalise(product.name, language)} ${c.add}`}>+</button></div></article>
+          return <article className={`product-card ${quantity ? 'selected' : ''}`} key={product.id}><span className="product-icon" aria-hidden="true">{product.icon}</span><strong>{shoppingLocalise(product.name, language)}</strong><div className="product-price">{product.discountPercent ? <><del>{formatNZD(product.priceCents, language)}</del><b>{formatNZD(salePrice, language)}</b><small>-{product.discountPercent}%</small></> : <b>{formatNZD(product.priceCents, language)}</b>}</div><small>{formatNZD(productUnitPriceCents(product), language)} / {productUnitPriceLabel(product, language)}</small><div className="quantity-control"><button disabled={quantity === 0 || feedback !== null} onClick={() => changeQuantity(product.id, -1)} aria-label={`${shoppingLocalise(product.name, language)} ${c.remove}`}>−</button><output aria-live="polite">{quantity}</output><button disabled={quantity === 9 || feedback !== null} onClick={() => changeQuantity(product.id, 1)} aria-label={`${shoppingLocalise(product.name, language)} ${c.add}`}>+</button></div></article>
         })}</div></div>
         <aside className="cart-panel"><div className="budget-card"><span>{c.budget}</span><strong>{formatNZD(question.budgetCents, language)}</strong></div><h2>🛒 {c.cart} <small>{itemCount}</small></h2>{itemCount === 0 ? <p className="empty-cart">{c.empty}</p> : <ul>{question.products.filter((product) => (cart[product.id] ?? 0) > 0).map((product) => { const price = product.discountPercent ? Math.round(product.priceCents * (100 - product.discountPercent) / 100) : product.priceCents; return <li key={product.id}><span>{product.icon} {shoppingLocalise(product.name, language)} × {cart[product.id]}</span><strong>{formatNZD(price * cart[product.id], language)}</strong></li> })}</ul>}<div className="cart-totals">{totals.discountCents > 0 && <><div><span>{c.subtotal}</span><span>{formatNZD(totals.subtotalCents, language)}</span></div><div className="saving"><span>{c.discount}</span><span>−{formatNZD(totals.discountCents, language)}</span></div></>}<div className="grand-total"><span>{c.total}</span><strong>{formatNZD(totals.totalCents, language)}</strong></div><div className={totals.remainingCents < 0 ? 'over-budget' : ''}><span>{c.remaining}</span><strong>{formatNZD(totals.remainingCents, language)}</strong></div></div>
           <div className="condition-list"><strong>{c.conditions}</strong>{question.conditionText.map((condition, index) => <span key={index}>◇ {shoppingLocalise(condition, language)}</span>)}</div>

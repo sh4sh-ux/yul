@@ -39,10 +39,10 @@ export function adjustedMathLevel(current: MathLevel, history: AnswerRecord[], m
   const recent = history.filter((item) => item.missionId === missionId).slice(-10)
   if (recent.length < 8) return current
   const correct = recent.filter((item) => item.correct).length
-  const lowSupportSuccess = recent.filter((item) => item.correct && item.hintsUsed <= 1).length
+  const independentSuccess = recent.filter((item) => item.correct && !item.supportAttempt && item.hintsUsed <= 1).length
   const supportedFailures = recent.filter((item) => !item.correct && item.supportAttempt).length
   const index = mathLevels.indexOf(current)
-  if (correct / recent.length >= 0.8 && lowSupportSuccess >= 6) return mathLevels[Math.min(index + 1, mathLevels.length - 1)]
+  if (correct / recent.length >= 0.8 && independentSuccess >= 6) return mathLevels[Math.min(index + 1, mathLevels.length - 1)]
   if (correct / recent.length < 0.45 && supportedFailures >= 2) return mathLevels[Math.max(index - 1, 0)]
   return current
 }

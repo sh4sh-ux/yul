@@ -28,6 +28,9 @@ export interface MissionProgress {
   missionState?: {
     cart?: Record<string, number>
     hintLevel?: number
+    attemptIds?: string[]
+    supportAttempt?: boolean
+    runActive?: boolean
   }
 }
 

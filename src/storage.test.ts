@@ -43,20 +43,20 @@ describe('IndexedDB learning repository', () => {
   it('keeps shopping answers and resumable cart state in a version-1 backup', async () => {
     await initialiseProfiles()
     await saveAnswer({ id: 'shop-a1', profileId: 'gayul', missionId: 'shopping', questionId: 'shopping-v12-y5-foundation-fruit-count', correct: false, hintsUsed: 1, answeredAt: '2026-10-10T00:00:00.000Z', answer: '[["apple",1]]' })
-    await saveProgress({ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 1, score: 0, total: 3, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, hintLevel: 1 } })
+    await saveProgress({ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 1, score: 0, total: 1, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: 2 }, hintLevel: 1, attemptIds: ['shop-a1'], supportAttempt: true, runActive: true } })
     const backup = await createBackup()
     expect(backup.version).toBe(1)
     expect(validateBackup(backup)).toBe(true)
     await restoreBackup(backup)
     expect((await getAnswers('gayul'))[0]).toMatchObject({ missionId: 'shopping', profileId: 'gayul' })
-    expect((await getProgress('gayul'))[0]).toMatchObject({ missionId: 'shopping', missionState: { cart: { milk: 2 }, hintLevel: 1 } })
+    expect((await getProgress('gayul'))[0]).toMatchObject({ missionId: 'shopping', missionState: { cart: { milk: 2 }, hintLevel: 1, attemptIds: ['shop-a1'], supportAttempt: true, runActive: true } })
     expect(await getAnswers('hayul')).toHaveLength(0)
   })
   it('rejects malformed resumable shopping state before restore', async () => {
     await initialiseProfiles()
     const before = await getProfiles()
     const backup = await createBackup()
-    const malformed = { ...backup, progress: [{ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 0, score: 0, total: 3, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: -2 }, hintLevel: 7 } }] }
+    const malformed = { ...backup, progress: [{ profileId: 'gayul', missionId: 'shopping', completed: false, currentStep: 0, score: 0, total: 3, updatedAt: '2026-10-10T00:00:00.000Z', missionState: { cart: { milk: -2 }, hintLevel: 7, attemptIds: ['duplicate', 'duplicate'], supportAttempt: 'yes', runActive: 1 } }] }
     expect(validateBackup(malformed)).toBe(false)
     await expect(restoreBackup(malformed)).rejects.toThrow()
     expect(await getProfiles()).toEqual(before)

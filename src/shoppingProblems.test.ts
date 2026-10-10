@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultProfiles } from './storage'
-import { buildShoppingQuestions, calculateCart, shoppingReviewPrompt, validateShoppingCart } from './shoppingProblems'
+import { buildShoppingQuestions, calculateCart, productUnitPriceCents, productUnitPriceLabel, shoppingReviewPrompt, validateShoppingCart } from './shoppingProblems'
 import type { AnswerRecord, MathLevel, Profile } from './types'
 
 const profileFor = (level: MathLevel, year: number): Profile => ({
@@ -52,6 +52,29 @@ describe('shopping problem bank', () => {
       hintsUsed: 0, answeredAt: new Date(index).toISOString(), answer: 'ok',
     }))
     expect(buildShoppingQuestions(profile, pizzaHistory)[0].level).toBe('advanced')
+  })
+
+  it.each([5, 7])('uses supported shopping failures as downward evidence for Year %s at every level', (year) => {
+    const levels: MathLevel[] = ['foundation', 'core', 'advanced', 'expert', 'master']
+    const expected: MathLevel[] = ['foundation', 'foundation', 'core', 'advanced', 'expert']
+    for (const [index, level] of levels.entries()) {
+      const profile = { ...profileFor(level, year), adaptiveDifficulty: true }
+      const history: AnswerRecord[] = Array.from({ length: 8 }, (_, attempt) => ({
+        id: `${year}-${level}-${attempt}`, profileId: 'gayul', missionId: 'shopping', questionId: `shopping-${attempt}`,
+        correct: false, hintsUsed: attempt % 2, supportAttempt: attempt % 2 === 1, answeredAt: new Date(attempt).toISOString(), answer: '[]',
+      }))
+      expect(buildShoppingQuestions(profile, history)[0].level).toBe(expected[index])
+    }
+  })
+
+  it('uses explicit item, litre and weight metadata for exact bilingual unit prices', () => {
+    const expert = buildShoppingQuestions(profileFor('expert', 7), [])
+    const eggs = expert[1].products.find((product) => product.id === 'eggs-12')!
+    const juice = buildShoppingQuestions(profileFor('advanced', 7), [])[2].products.find((product) => product.id === 'juice-2')!
+    const cheese = buildShoppingQuestions(profileFor('master', 7), [])[2].products.find((product) => product.id === 'cheese-500')!
+    expect([eggs.measurement.unit, productUnitPriceCents(eggs), productUnitPriceLabel(eggs, 'ko'), productUnitPriceLabel(eggs, 'en')]).toEqual(['item', 80, '개', 'egg'])
+    expect([juice.measurement.unit, productUnitPriceCents(juice), productUnitPriceLabel(juice, 'ko'), productUnitPriceLabel(juice, 'en')]).toEqual(['litre', 425, 'L', 'L'])
+    expect([cheese.measurement.unit, productUnitPriceCents(cheese), productUnitPriceLabel(cheese, 'ko'), productUnitPriceLabel(cheese, 'en')]).toEqual(['gram', 96, '100g', '100g'])
   })
 
   it('reconstructs Korean and English review prompts from stable IDs', () => {

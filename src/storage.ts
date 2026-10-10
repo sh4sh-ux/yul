@@ -62,6 +62,16 @@ export async function getAnswers(profileId: string): Promise<AnswerRecord[]> {
 }
 export async function saveAnswer(answer: AnswerRecord): Promise<void> { await (await db()).put('answers', answer) }
 
+export async function saveAnswerAndProgress(answer: AnswerRecord, progress: MissionProgressWithProfile): Promise<void> {
+  const store = await db()
+  const transaction = store.transaction(['answers', 'progress'], 'readwrite')
+  await Promise.all([
+    transaction.objectStore('answers').put(answer),
+    transaction.objectStore('progress').put({ ...progress, key: `${progress.profileId}:${progress.missionId}` } as MissionProgressWithProfile),
+  ])
+  await transaction.done
+}
+
 export async function getProgress(profileId: string): Promise<MissionProgressWithProfile[]> {
   return (await db()).getAllFromIndex('progress', 'by-profile', profileId)
 }
@@ -122,7 +132,11 @@ export function validateBackup(value: unknown): value is AppBackup {
       const validHint = state.hintLevel === undefined || (Number.isInteger(state.hintLevel) && state.hintLevel >= 0 && state.hintLevel <= 2)
       const validCart = state.cart === undefined || (state.cart !== null && typeof state.cart === 'object' && !Array.isArray(state.cart)
         && Object.values(state.cart).every((quantity) => Number.isInteger(quantity) && quantity >= 0 && quantity <= 9))
-      return validHint && validCart
+      const validAttempts = state.attemptIds === undefined || (Array.isArray(state.attemptIds)
+        && state.attemptIds.every((id) => typeof id === 'string' && id.length > 0) && new Set(state.attemptIds).size === state.attemptIds.length)
+      const validSupport = state.supportAttempt === undefined || typeof state.supportAttempt === 'boolean'
+      const validRun = state.runActive === undefined || typeof state.runActive === 'boolean'
+      return validHint && validCart && validAttempts && validSupport && validRun
     })
 }
 

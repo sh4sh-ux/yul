@@ -16,4 +16,8 @@ describe('math level migration and adjustment', () => {
     expect(adjustedMathLevel('advanced', records(false))).toBe('advanced')
     expect(adjustedMathLevel('advanced', records(false, true))).toBe('core')
   })
+  it('does not treat supported correct answers as independent evidence for promotion', () => {
+    expect(adjustedMathLevel('advanced', records(true, true))).toBe('advanced')
+    expect(adjustedMathLevel('advanced', records(true, false))).toBe('expert')
+  })
 })

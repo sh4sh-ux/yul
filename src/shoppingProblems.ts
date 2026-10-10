@@ -9,7 +9,12 @@ export interface ShopProduct {
   icon: string
   priceCents: number
   packSize: number
-  unit: ShoppingText
+  measurement: {
+    amount: number
+    unit: 'item' | 'gram' | 'litre'
+    priceBasis: number
+    priceBasisLabel: ShoppingText
+  }
   discountPercent?: number
 }
 
@@ -55,15 +60,16 @@ export const formatNZD = (cents: number, language: Language) => {
   return `${cents < 0 ? '-' : ''}NZ$${amount}`
 }
 
+const measured = (amount: number, unit: ShopProduct['measurement']['unit'], priceBasis: number, ko: string, en: string): ShopProduct['measurement'] => ({ amount, unit, priceBasis, priceBasisLabel: tx(ko, en) })
 const catalogue = {
-  apple: (priceCents = 125): ShopProduct => ({ id: 'apple', name: tx('사과', 'Apples'), icon: '🍎', priceCents, packSize: 1, unit: tx('개', 'each') }),
-  milk: (priceCents = 320): ShopProduct => ({ id: 'milk', name: tx('우유', 'Milk'), icon: '🥛', priceCents, packSize: 1, unit: tx('병', 'bottle') }),
-  bread: (priceCents = 380): ShopProduct => ({ id: 'bread', name: tx('빵', 'Bread'), icon: '🍞', priceCents, packSize: 1, unit: tx('봉지', 'loaf') }),
-  eggs: (priceCents = 540, packSize = 6): ShopProduct => ({ id: `eggs-${packSize}`, name: tx(`달걀 ${packSize}개`, `${packSize} eggs`), icon: '🥚', priceCents, packSize, unit: tx('팩', 'pack') }),
-  banana: (priceCents = 90): ShopProduct => ({ id: 'banana', name: tx('바나나', 'Bananas'), icon: '🍌', priceCents, packSize: 1, unit: tx('개', 'each') }),
-  cheese: (priceCents = 600, packSize = 500): ShopProduct => ({ id: `cheese-${packSize}`, name: tx(`치즈 ${packSize}g`, `${packSize}g cheese`), icon: '🧀', priceCents, packSize, unit: tx('팩', 'pack') }),
-  cereal: (priceCents = 750, packSize = 750): ShopProduct => ({ id: `cereal-${packSize}`, name: tx(`시리얼 ${packSize}g`, `${packSize}g cereal`), icon: '🥣', priceCents, packSize, unit: tx('상자', 'box') }),
-  juice: (priceCents = 480, packSize = 1): ShopProduct => ({ id: `juice-${packSize}`, name: tx(`주스 ${packSize}L`, `${packSize}L juice`), icon: '🧃', priceCents, packSize, unit: tx('병', 'bottle') }),
+  apple: (priceCents = 125): ShopProduct => ({ id: 'apple', name: tx('사과', 'Apples'), icon: '🍎', priceCents, packSize: 1, measurement: measured(1, 'item', 1, '개', 'item') }),
+  milk: (priceCents = 320): ShopProduct => ({ id: 'milk', name: tx('우유', 'Milk'), icon: '🥛', priceCents, packSize: 1, measurement: measured(1, 'litre', 1, 'L', 'L') }),
+  bread: (priceCents = 380): ShopProduct => ({ id: 'bread', name: tx('빵', 'Bread'), icon: '🍞', priceCents, packSize: 1, measurement: measured(1, 'item', 1, '봉지', 'loaf') }),
+  eggs: (priceCents = 540, packSize = 6): ShopProduct => ({ id: `eggs-${packSize}`, name: tx(`달걀 ${packSize}개`, `${packSize} eggs`), icon: '🥚', priceCents, packSize, measurement: measured(packSize, 'item', 1, '개', 'egg') }),
+  banana: (priceCents = 90): ShopProduct => ({ id: 'banana', name: tx('바나나', 'Bananas'), icon: '🍌', priceCents, packSize: 1, measurement: measured(1, 'item', 1, '개', 'item') }),
+  cheese: (priceCents = 600, packSize = 500): ShopProduct => ({ id: `cheese-${packSize}`, name: tx(`치즈 ${packSize}g`, `${packSize}g cheese`), icon: '🧀', priceCents, packSize, measurement: measured(packSize, 'gram', 100, '100g', '100g') }),
+  cereal: (priceCents = 750, packSize = 750): ShopProduct => ({ id: `cereal-${packSize}`, name: tx(`시리얼 ${packSize}g`, `${packSize}g cereal`), icon: '🥣', priceCents, packSize, measurement: measured(packSize, 'gram', 100, '100g', '100g') }),
+  juice: (priceCents = 480, packSize = 1): ShopProduct => ({ id: `juice-${packSize}`, name: tx(`주스 ${packSize}L`, `${packSize}L juice`), icon: '🧃', priceCents, packSize, measurement: measured(packSize, 'litre', 1, 'L', 'L') }),
 }
 
 const discounted = (product: ShopProduct, discountPercent: number): ShopProduct => ({ ...product, discountPercent })
@@ -82,6 +88,15 @@ export function calculateCart(question: ShoppingQuestion, cart: Record<string, n
   }
   return { subtotalCents, discountCents: subtotalCents - totalCents, totalCents, remainingCents: question.budgetCents - totalCents }
 }
+
+export function productUnitPriceCents(product: ShopProduct): number {
+  const salePrice = product.discountPercent
+    ? Math.round(product.priceCents * (100 - product.discountPercent) / 100)
+    : product.priceCents
+  return Math.round(salePrice * product.measurement.priceBasis / product.measurement.amount)
+}
+
+export const productUnitPriceLabel = (product: ShopProduct, language: Language) => shoppingLocalise(product.measurement.priceBasisLabel, language)
 
 export function validateShoppingCart(question: ShoppingQuestion, cart: Record<string, number>): boolean {
   if (!question.products.some((product) => (cart[product.id] ?? 0) > 0)) return false

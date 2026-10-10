@@ -3,7 +3,17 @@ import type { Fraction } from './fractions'
 import type { AnswerRecord, Language, MathLevel, Profile } from './types'
 
 export interface LocalisedText { ko: string; en: string }
-export interface SupportQuestion { id: string; prompt: LocalisedText; story: LocalisedText; denominator: number; target: Fraction; equation: string }
+export interface SupportQuestion {
+  id: string
+  prompt: LocalisedText
+  story: LocalisedText
+  denominator: number
+  target: Fraction
+  equation: string
+  hints: [LocalisedText, LocalisedText]
+  explanation: LocalisedText
+  alternateExplanation: LocalisedText
+}
 export interface PizzaQuestion {
   id: string; objectiveId: string; level: MathLevel; curriculumBand: 'core' | 'extension'; stage: 1 | 2 | 3
   stageName: LocalisedText; concept: LocalisedText; prompt: LocalisedText; story: LocalisedText
@@ -15,7 +25,18 @@ type Task = Omit<PizzaQuestion, 'id' | 'level' | 'curriculumBand' | 'stageName' 
 const tx = (ko: string, en: string): LocalisedText => ({ ko, en })
 export const localise = (value: LocalisedText, language: Language): string => value[language]
 const stageNames = [tx('', ''), tx('1단계 · 발견', 'Stage 1 · Discover'), tx('2단계 · 해결', 'Stage 2 · Solve'), tx('3단계 · 추론', 'Stage 3 · Reason')] as const
-const sup = (prompt: LocalisedText, story: LocalisedText, denominator: number, numerator: number, equation: string) => ({ prompt, story, denominator, target: { numerator, denominator }, equation })
+const sup = (prompt: LocalisedText, story: LocalisedText, denominator: number, numerator: number, equation: string): Omit<SupportQuestion, 'id'> => {
+  const answer = `${numerator}/${denominator}`
+  return {
+    prompt, story, denominator, target: { numerator, denominator }, equation,
+    hints: [
+      tx(`지원 문제의 식 ${equation}이 무엇을 묻는지 먼저 확인하세요.`, `First identify what the support equation ${equation} is asking.`),
+      tx(`피자를 ${denominator}개의 같은 조각으로 보고 ${numerator}조각을 선택하세요.`, `Treat the pizza as ${denominator} equal slices and select ${numerator}.`),
+    ],
+    explanation: tx(`식 ${equation}의 정답은 ${answer}입니다.`, `The answer to ${equation} is ${answer}.`),
+    alternateExplanation: tx(`그림을 ${denominator}개의 같은 조각으로 나누고 ${numerator}조각을 표시해 정답이 ${answer}인지 확인해 보세요.`, `Split the model into ${denominator} equal slices and mark ${numerator} to check ${answer}.`),
+  }
+}
 const task = (stage: 1 | 2 | 3, slug: string, objectiveId: string, concept: LocalisedText, prompt: LocalisedText, story: LocalisedText,
   denominator: number, numerator: number, equation: string, hint1: LocalisedText, hint2: LocalisedText, explanation: LocalisedText,
   alternateExplanation: LocalisedText, support: Omit<SupportQuestion, 'id'>): Task => ({ stage, slug, objectiveId, concept, prompt, story, denominator,

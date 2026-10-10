@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildPizzaQuestions, localise } from '../pizzaProblems'
 import { defaultProfiles, getAnswers, getProgress, resetDatabaseConnectionForTests, saveProgress } from '../storage'
+import type { Language, MathLevel } from '../types'
 import { PizzaMission } from './PizzaMission'
 
 const clearDatabase = async () => {
@@ -14,7 +16,7 @@ const clearDatabase = async () => {
 }
 
 const selectSlices = async (user: ReturnType<typeof userEvent.setup>, count: number) => {
-  const slices = screen.getAllByRole('button', { name: /피자 조각 \d/ })
+  const slices = screen.getAllByRole('button', { name: /(피자 조각|pizza slice) \d/ })
   for (const slice of slices.slice(0, count)) await user.click(slice)
 }
 const foundationProfile = () => ({ ...defaultProfiles()[0], year: 5 as const, difficulty: 'foundation' as const, mathLevel: 'foundation' as const, adaptiveDifficulty: false })
@@ -83,19 +85,59 @@ describe('PizzaMission', () => {
   it('shows supportive feedback and progressive hints after a wrong answer', async () => {
     const user = userEvent.setup()
     const profile = foundationProfile()
+    const question = buildPizzaQuestions(profile, [])[0]
     render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
     await selectSlices(user, 1)
     await user.click(screen.getByRole('button', { name: '정답 확인' }))
     expect(await screen.findByText('괜찮아요, 다시 살펴봐요.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '유사 문제로 연습' }))
     expect(screen.getByText('같은 생각을 다른 문제로 연습해요')).toBeInTheDocument()
-    expect(screen.getByText(/분모는 전체 조각 수/)).toBeInTheDocument()
+    expect(screen.getByText(/지원 문제의 식 2\/4/)).toBeInTheDocument()
     await selectSlices(user, 1)
     await user.click(screen.getByRole('button', { name: '정답 확인' }))
+    expect(await screen.findByText(localise(question.support.alternateExplanation, 'ko'))).toBeInTheDocument()
+    expect(screen.queryByText(localise(question.alternateExplanation, 'ko'))).not.toBeInTheDocument()
     await waitFor(async () => expect((await getAnswers('gayul'))[1]).toMatchObject({ supportAttempt: true, objectiveId: 'part-whole' }))
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
     await user.click(screen.getByRole('button', { name: /다음 힌트/ }))
-    expect(screen.getByText(/분자 3만큼/)).toBeInTheDocument()
+    expect(screen.getByText(/4개의 같은 조각으로 보고 2조각/)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['foundation', 'ko'], ['core', 'ko'], ['advanced', 'ko'], ['expert', 'ko'], ['master', 'ko'],
+    ['foundation', 'en'], ['core', 'en'], ['advanced', 'en'], ['expert', 'en'], ['master', 'en'],
+  ] as Array<[MathLevel, Language]>)('uses the %s support hint and explanation in %s', async (level, language) => {
+    const user = userEvent.setup()
+    const profile = { ...defaultProfiles()[0], year: 5 as const, difficulty: level, mathLevel: level, adaptiveDifficulty: false, language }
+    const baseQuestion = buildPizzaQuestions(profile, [])[0]
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+
+    await selectSlices(user, 1)
+    await user.click(screen.getByRole('button', { name: language === 'ko' ? '정답 확인' : 'Check answer' }))
+    await user.click(await screen.findByRole('button', { name: language === 'ko' ? '유사 문제로 연습' : 'Try a similar problem' }))
+
+    expect(screen.getByText(localise(baseQuestion.support.hints[0], language))).toBeInTheDocument()
+    expect(screen.queryByText(localise(baseQuestion.hints[0], language))).not.toBeInTheDocument()
+    await selectSlices(user, baseQuestion.support.target.numerator)
+    await user.click(screen.getByRole('button', { name: language === 'ko' ? '정답 확인' : 'Check answer' }))
+    expect(await screen.findByText(localise(baseQuestion.support.explanation, language))).toBeInTheDocument()
+    expect(screen.queryByText(localise(baseQuestion.explanation, language))).not.toBeInTheDocument()
+  })
+
+  it('clears support copy before the next generated stage', async () => {
+    const user = userEvent.setup()
+    const profile = foundationProfile()
+    const questions = buildPizzaQuestions(profile, [])
+    render(<PizzaMission profile={profile} history={[]} initialStep={0} initialScore={0} initialTotal={3} wasCompleted={false} onExit={vi.fn()} onComplete={vi.fn()} onDataChanged={vi.fn()} />)
+    await selectSlices(user, 1)
+    await user.click(screen.getByRole('button', { name: '정답 확인' }))
+    await user.click(await screen.findByRole('button', { name: '유사 문제로 연습' }))
+    await selectSlices(user, questions[0].support.target.numerator)
+    await user.click(screen.getByRole('button', { name: '정답 확인' }))
+    await user.click(await screen.findByRole('button', { name: /다음 문제/ }))
+    await user.click(screen.getByRole('button', { name: /힌트/ }))
+    expect(screen.getByText(localise(questions[1].hints[0], 'ko'))).toBeInTheDocument()
+    expect(screen.queryByText(localise(questions[0].support.hints[0], 'ko'))).not.toBeInTheDocument()
   })
 
   it('restores the saved stage after remounting', () => {

@@ -45,4 +45,20 @@ describe('five-level pizza problem bank', () => {
   it('keeps one language visible at a time', () => {
     expect(localise(buildPizzaQuestions(profileFor(5, 'advanced'), [])[0].prompt, 'en')).toBe('Show the pizza amount equal to 75%.')
   })
+  it.each([5, 7])('provides self-contained bilingual support data for every level in Year %s', (year) => {
+    for (const level of ['foundation', 'core', 'advanced', 'expert', 'master'] as MathLevel[]) {
+      for (const question of buildPizzaQuestions(profileFor(year, level), [])) {
+        const answer = `${question.support.target.numerator}/${question.support.target.denominator}`
+        expect(question.support.hints).toHaveLength(2)
+        for (const language of ['ko', 'en'] as const) {
+          expect(localise(question.support.prompt, language)).not.toBe(localise(question.prompt, language))
+          expect(localise(question.support.hints[0], language)).toContain(question.support.equation)
+          expect(localise(question.support.hints[1], language)).toContain(String(question.support.denominator))
+          expect(localise(question.support.hints[1], language)).toContain(String(question.support.target.numerator))
+          expect(localise(question.support.explanation, language)).toContain(answer)
+          expect(localise(question.support.alternateExplanation, language)).toContain(answer)
+        }
+      }
+    }
+  })
 })

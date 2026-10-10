@@ -38,7 +38,10 @@ export interface MissionProgress {
 
 export interface Profile {
   id: 'gayul' | 'hayul'
+  /** Legacy Korean display name retained for v1 backup compatibility. */
   name: string
+  /** Language-specific display names. Older records are migrated on read. */
+  names?: Record<Language, string>
   avatar: string
   year: number | null
   language: Language

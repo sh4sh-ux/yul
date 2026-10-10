@@ -45,6 +45,26 @@ describe('YULI app flow', () => {
     expect(screen.getByRole('button', { name: /쇼핑 챌린지/ })).toBeInTheDocument()
   })
 
+  it('updates the selected learner name throughout the app when language changes', async () => {
+    const user = userEvent.setup()
+    const [gayul, hayul] = defaultProfiles()
+    await saveProfile({ ...gayul, year: 5 })
+    await saveProfile(hayul)
+    await setSelectedProfile('gayul')
+    render(<App />)
+
+    expect(await screen.findByText('안녕, 가율!')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '설정' }))
+    expect(screen.getAllByText('가율').length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: 'English' }))
+    await waitFor(() => expect(screen.getAllByText('Helena').length).toBeGreaterThan(0))
+    expect(screen.queryByText('가율')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Growth/ }))
+    expect(screen.getByRole('heading', { name: 'Helena' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Home/ }))
+    expect(screen.getByText('Kia ora, Helena!')).toBeInTheDocument()
+  })
+
   it('preserves completion and XP after a completed mission is replayed', async () => {
     const user = userEvent.setup()
     const [gayulDefault, hayul] = defaultProfiles()

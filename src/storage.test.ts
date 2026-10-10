@@ -26,6 +26,21 @@ describe('IndexedDB learning repository', () => {
     expect(await getAnswers('gayul')).toHaveLength(1)
     expect(await getAnswers('hayul')).toHaveLength(0)
   })
+  it('migrates legacy names without changing profile IDs, XP or learning records', async () => {
+    await initialiseProfiles()
+    await saveAnswer({ id: 'legacy-name-answer', profileId: 'gayul', missionId: 'pizza', questionId: 'legacy', correct: true, hintsUsed: 0, answeredAt: '2026-01-01T00:00:00.000Z', answer: '1/2' })
+    const backup = await createBackup()
+    const legacy = {
+      ...backup,
+      profiles: backup.profiles.map(({ names: _names, ...profile }) => profile.id === 'gayul' ? { ...profile, name: '가율별', xp: 70 } : profile),
+    }
+    await restoreBackup(legacy)
+    const gayul = (await getProfiles()).find((profile) => profile.id === 'gayul')
+    expect(gayul).toMatchObject({ id: 'gayul', name: '가율별', names: { ko: '가율별', en: 'Helena' }, xp: 70 })
+    expect((await getProfiles()).find((profile) => profile.id === 'hayul')).toMatchObject({ id: 'hayul', names: { ko: '하율', en: 'Luna' }, xp: 0 })
+    expect(await getAnswers('gayul')).toMatchObject([{ id: 'legacy-name-answer', profileId: 'gayul' }])
+    expect(await getAnswers('hayul')).toHaveLength(0)
+  })
   it('returns each profile answer history in chronological order', async () => {
     await initialiseProfiles()
     await saveAnswer({ id: 'a-first-key', profileId: 'gayul', missionId: 'pizza', questionId: 'newer', correct: true, hintsUsed: 0, answeredAt: '2026-01-03T00:00:00.000Z', answer: '3/4' })

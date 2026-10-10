@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { mathLevels, migrateProfile } from './mathLevels'
+import { migrateProfileNames } from './profileNames'
 import type { AnswerRecord, AppBackup, MissionProgressWithProfile, Profile } from './types'
 
 interface YuliDB extends DBSchema {
@@ -32,8 +33,8 @@ const now = () => new Date().toISOString()
 export function defaultProfiles(): Profile[] {
   const createdAt = now()
   return [
-    { id: 'gayul', name: '가율', avatar: '🌿', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
-    { id: 'hayul', name: '하율', avatar: '🚀', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
+    { id: 'gayul', name: '가율', names: { ko: '가율', en: 'Helena' }, avatar: '🌿', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
+    { id: 'hayul', name: '하율', names: { ko: '하율', en: 'Luna' }, avatar: '🚀', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
   ]
 }
 
@@ -45,17 +46,17 @@ export async function initialiseProfiles(): Promise<Profile[]> {
     await Promise.all([...defaultProfiles().map((profile) => transaction.store.put(profile)), transaction.done])
     profiles = await store.getAll('profiles')
   }
-  const migrated = profiles.map((profile) => migrateProfile(profile) as Profile)
+  const migrated = profiles.map((profile) => migrateProfileNames(migrateProfile(profile)) as Profile)
   const transaction = store.transaction('profiles', 'readwrite')
   await Promise.all([...migrated.map((profile) => transaction.store.put(profile)), transaction.done])
   return migrated.sort((a, b) => a.id.localeCompare(b.id))
 }
 
 export async function saveProfile(profile: Profile): Promise<void> {
-  await (await db()).put('profiles', { ...profile, updatedAt: now() })
+  await (await db()).put('profiles', { ...migrateProfileNames(profile), updatedAt: now() })
 }
 
-export async function getProfiles(): Promise<Profile[]> { return (await (await db()).getAll('profiles')).map((profile) => migrateProfile(profile) as Profile) }
+export async function getProfiles(): Promise<Profile[]> { return (await (await db()).getAll('profiles')).map((profile) => migrateProfileNames(migrateProfile(profile)) as Profile) }
 export async function getAnswers(profileId: string): Promise<AnswerRecord[]> {
   const answers = await (await db()).getAllFromIndex('answers', 'by-profile', profileId)
   return answers.sort((a, b) => a.answeredAt.localeCompare(b.answeredAt))
@@ -146,6 +147,9 @@ const isProfile = (value: unknown): value is Profile => {
   const validUnits = unitDifficulties !== null && typeof unitDifficulties === 'object' && !Array.isArray(unitDifficulties)
     && Object.entries(unitDifficulties).every(([missionId, difficulty]) => validMissionIds.includes(missionId) && validDifficulties.includes(String(difficulty)))
   const diagnostic = item.diagnostic as Record<string, unknown> | undefined
+  const names = item.names as Record<string, unknown> | undefined
+  const validNames = names === undefined || (names !== null && typeof names === 'object' && !Array.isArray(names)
+    && typeof names.ko === 'string' && names.ko.trim().length > 0 && typeof names.en === 'string' && names.en.trim().length > 0)
   const validDiagnostic = diagnostic === undefined || (typeof diagnostic === 'object' && diagnostic !== null
     && typeof diagnostic.completedAt === 'string' && typeof diagnostic.score === 'number' && Number.isInteger(diagnostic.score)
     && diagnostic.score >= 0 && diagnostic.score <= 10 && diagnostic.total === 10
@@ -156,7 +160,7 @@ const isProfile = (value: unknown): value is Profile => {
     && validDifficulties.includes(String(item.difficulty)) && validUnits
     && (item.mathLevel === undefined || mathLevels.includes(item.mathLevel as Profile['mathLevel']))
     && (item.adaptiveDifficulty === undefined || typeof item.adaptiveDifficulty === 'boolean')
-    && validDiagnostic
+    && validDiagnostic && validNames
     && typeof item.xp === 'number' && Number.isFinite(item.xp) && item.xp >= 0
     && typeof item.createdAt === 'string' && typeof item.updatedAt === 'string'
 }
@@ -194,7 +198,7 @@ export async function restoreBackup(value: unknown): Promise<void> {
   await Promise.all([
     transaction.objectStore('profiles').clear(), transaction.objectStore('answers').clear(), transaction.objectStore('progress').clear(),
   ])
-  for (const profile of value.profiles) await transaction.objectStore('profiles').put(migrateProfile(profile) as Profile)
+  for (const profile of value.profiles) await transaction.objectStore('profiles').put(migrateProfileNames(migrateProfile(profile)) as Profile)
   for (const answer of value.answers) await transaction.objectStore('answers').put(answer)
   for (const progress of value.progress) await transaction.objectStore('progress').put({ ...progress, key: `${progress.profileId}:${progress.missionId}` } as MissionProgressWithProfile)
   await transaction.done

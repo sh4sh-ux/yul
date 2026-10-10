@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildPizzaQuestions, localise } from '../pizzaProblems'
 import { defaultProfiles, getAnswers, getProgress, resetDatabaseConnectionForTests, saveProgress } from '../storage'
 import type { Language, MathLevel } from '../types'
-import { PizzaMission } from './PizzaMission'
+import { isWorkingAnswerCorrect, PizzaMission } from './PizzaMission'
 
 const clearDatabase = async () => {
   await resetDatabaseConnectionForTests()
@@ -20,7 +20,7 @@ const selectSlices = async (user: ReturnType<typeof userEvent.setup>, count: num
   for (const slice of slices.slice(0, count)) await user.click(slice)
 }
 const completeMasterWorking = async (user: ReturnType<typeof userEvent.setup>) => {
-  const input = screen.queryByLabelText('두 분수의 공통분모를 입력하세요.') ?? screen.queryByLabelText('Enter a common denominator for both fractions.')
+  const input = screen.queryByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.') ?? screen.queryByLabelText('Enter the least common denominator as a whole number.')
   if (!input) return
   await user.type(input, '12')
   await user.click(screen.getByRole('button', { name: /이 단계 확인|Check this step/ }))
@@ -33,6 +33,25 @@ const foundationProfile = () => ({ ...defaultProfiles()[0], year: 5 as const, di
 describe('PizzaMission', () => {
   beforeEach(clearDatabase)
   afterEach(clearDatabase)
+
+  it.each([
+    ['14/24', ['7/12']],
+    ['60%', ['0.6']],
+    ['0.60', ['60%']],
+    ['3/5', ['60%']],
+  ])('accepts the mathematically equivalent working answer %s', (answer, expected) => {
+    expect(isWorkingAnswerCorrect(answer, expected)).toBe(true)
+  })
+
+  it.each(['1/0', '4//5', 'not-a-number', '50%%'])('safely rejects invalid working input %s', (answer) => {
+    expect(isWorkingAnswerCorrect(answer, ['1/2'])).toBe(false)
+  })
+
+  it('enforces the requested whole-number format for a least common denominator', () => {
+    expect(isWorkingAnswerCorrect('12', ['12'], 'integer')).toBe(true)
+    expect(isWorkingAnswerCorrect('12.0', ['12'], 'integer')).toBe(false)
+    expect(isWorkingAnswerCorrect('24/2', ['12'], 'integer')).toBe(false)
+  })
 
   it('checks a visually selected three-quarter pizza and advances', async () => {
     const user = userEvent.setup()
@@ -111,15 +130,18 @@ describe('PizzaMission', () => {
     const firstSlice = screen.getAllByRole('button', { name: /피자 조각/ })[0]
     expect(firstSlice).toHaveAttribute('aria-disabled', 'true')
 
-    await user.type(screen.getByLabelText('두 분수의 공통분모를 입력하세요.'), '10')
+    await user.type(screen.getByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.'), '10')
     await user.click(screen.getByRole('button', { name: '이 단계 확인' }))
     expect(screen.getByRole('alert')).toHaveTextContent('좋은 시도예요')
-    await user.clear(screen.getByLabelText('두 분수의 공통분모를 입력하세요.'))
-    await user.type(screen.getByLabelText('두 분수의 공통분모를 입력하세요.'), '12')
+    await user.clear(screen.getByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.'))
+    await user.type(screen.getByLabelText('두 분수의 최소공통분모를 정수로 입력하세요.'), '12')
     await user.click(screen.getByRole('button', { name: '이 단계 확인' }))
-    await user.type(screen.getByLabelText('통분한 뒤 계산한 분수를 입력하세요.'), '7/12')
+    await user.type(screen.getByLabelText('통분한 뒤 계산한 분수를 입력하세요.'), '14/24')
     await user.click(screen.getByRole('button', { name: '이 단계 확인' }))
     expect(firstSlice).toHaveAttribute('aria-disabled', 'false')
+    const pizzaGuide = screen.getAllByText('3 · 피자 시각화')[1]
+    await waitFor(() => expect(pizzaGuide).toHaveFocus())
+    expect(screen.getByRole('status')).toHaveTextContent('계산을 확인했어요')
     await selectSlices(user, 7)
     await user.click(screen.getByRole('button', { name: '정답 확인' }))
     expect(await screen.findByText('답은 7/12예요.')).toBeInTheDocument()

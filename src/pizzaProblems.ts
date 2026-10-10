@@ -7,6 +7,7 @@ export interface WorkingStep {
   prompt: LocalisedText
   acceptedAnswers: string[]
   explanation: LocalisedText
+  answerFormat?: 'integer' | 'rational'
 }
 export interface SupportQuestion {
   id: string
@@ -83,7 +84,7 @@ function high(level: 'expert' | 'master', year7: boolean): Task[] {
   if (!master) return tasks
   const workingSteps: WorkingStep[][] = [
     [
-      { prompt: tx('두 분수의 공통분모를 입력하세요.', 'Enter a common denominator for both fractions.'), acceptedAnswers: ['12'], explanation: tx('6과 4의 최소공배수는 12예요.', 'The least common multiple of 6 and 4 is 12.') },
+      { prompt: tx('두 분수의 최소공통분모를 정수로 입력하세요.', 'Enter the least common denominator as a whole number.'), acceptedAnswers: ['12'], explanation: tx('6과 4의 최소공배수는 12예요.', 'The least common multiple of 6 and 4 is 12.'), answerFormat: 'integer' },
       { prompt: tx('통분한 뒤 계산한 분수를 입력하세요.', 'Enter the fraction after renaming and calculating.'), acceptedAnswers: ['7/12'], explanation: tx('10/12 - 3/12 = 7/12예요.', '10/12 − 3/12 = 7/12.') },
     ],
     [

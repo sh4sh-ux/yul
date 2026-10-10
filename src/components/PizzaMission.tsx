@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fractionsEqual } from '../fractions'
+import { fractionsEqual, parseRational, rationalsEqual } from '../fractions'
 import { t } from '../i18n'
 import { levelRank } from '../mathLevels'
 import { buildPizzaQuestions, localise } from '../pizzaProblems'
@@ -7,11 +7,15 @@ import { saveAnswer, saveProgress } from '../storage'
 import type { AnswerRecord, Profile } from '../types'
 import { InteractivePizza } from './InteractivePizza'
 
-const normaliseWorkingAnswer = (value: string) => value.trim().replace(/\s+/g, '').replace(',', '.')
-
-export function isWorkingAnswerCorrect(value: string, acceptedAnswers: string[]): boolean {
-  const normalised = normaliseWorkingAnswer(value)
-  return acceptedAnswers.some((answer) => normaliseWorkingAnswer(answer) === normalised)
+export function isWorkingAnswerCorrect(value: string, acceptedAnswers: string[], answerFormat: 'integer' | 'rational' = 'rational'): boolean {
+  const compact = value.trim().replace(/\s+/g, '').replace(',', '.')
+  if (answerFormat === 'integer' && !/^[+-]?\d+$/.test(compact)) return false
+  const parsed = parseRational(compact)
+  if (!parsed) return false
+  return acceptedAnswers.some((answer) => {
+    const expected = parseRational(answer)
+    return expected !== null && rationalsEqual(parsed, expected)
+  })
 }
 
 export function MissionIntro({ profile, onBack, onBegin }: { profile: Profile; onBack: () => void; onBegin: () => void }) {
@@ -36,6 +40,7 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
   const [workingInput, setWorkingInput] = useState('')
   const [workingError, setWorkingError] = useState(false)
   const submissionLocked = useRef(false)
+  const pizzaGuideRef = useRef<HTMLSpanElement>(null)
   const otherLanguage = language === 'ko' ? 'en' : 'ko'
   const baseQuestion = questions[step]
   const question = usingSupport ? { ...baseQuestion, ...baseQuestion.support } : baseQuestion
@@ -43,6 +48,10 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
   const correct = fractionsEqual(currentFraction, question.target)
   const workingSteps = !usingSupport ? baseQuestion.workingSteps ?? [] : []
   const workingComplete = workingStep >= workingSteps.length
+
+  useEffect(() => {
+    if (workingSteps.length > 0 && workingComplete) pizzaGuideRef.current?.focus()
+  }, [workingComplete, workingSteps.length])
 
   useEffect(() => {
     void saveProgress({
@@ -69,7 +78,7 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
   const checkWorkingStep = () => {
     const current = workingSteps[workingStep]
     if (!current || !workingInput.trim()) return
-    if (!isWorkingAnswerCorrect(workingInput, current.acceptedAnswers)) {
+    if (!isWorkingAnswerCorrect(workingInput, current.acceptedAnswers, current.answerFormat)) {
       setWorkingError(true)
       return
     }
@@ -129,13 +138,13 @@ export function PizzaMission({ profile, history, initialStep, initialScore, init
         <div className="working-history">{workingSteps.slice(0, workingStep).map((item, index) => <p key={index}><b>✓</b> {localise(item.explanation, language)}</p>)}</div>
         {!workingComplete && <form onSubmit={(event) => { event.preventDefault(); checkWorkingStep() }}>
           <label htmlFor="master-working-answer">{localise(workingSteps[workingStep].prompt, language)}</label>
-          <div><input id="master-working-answer" value={workingInput} onChange={(event) => { setWorkingInput(event.target.value); setWorkingError(false) }} inputMode="text" autoComplete="off" aria-invalid={workingError} /><button className="button secondary" type="submit" disabled={!workingInput.trim()}>{language === 'ko' ? '이 단계 확인' : 'Check this step'}</button></div>
+          <div><input id="master-working-answer" value={workingInput} maxLength={32} onChange={(event) => { setWorkingInput(event.target.value); setWorkingError(false) }} inputMode="text" autoComplete="off" aria-invalid={workingError} /><button className="button secondary" type="submit" disabled={!workingInput.trim()}>{language === 'ko' ? '이 단계 확인' : 'Check this step'}</button></div>
           {workingError && <p className="working-error" role="alert">{language === 'ko' ? '좋은 시도예요. 계산 과정을 한 번 더 확인해 보세요.' : 'Good try. Check the calculation one more time.'}</p>}
         </form>}
-        {workingComplete && <p className="working-ready"><b>✓</b> {language === 'ko' ? '계산을 확인했어요. 이제 피자 조각으로 나타내세요.' : 'Working checked. Now show the result with pizza slices.'}</p>}
+        {workingComplete && <p className="working-ready" role="status" aria-live="polite"><b>✓</b> {language === 'ko' ? '계산을 확인했어요. 이제 피자 조각으로 나타내세요.' : 'Working checked. Now show the result with pizza slices.'}</p>}
       </section>}
       <section className="pizza-workspace">
-        <div className="pizza-stage"><span className="workspace-label">{workingSteps.length > 0 ? (language === 'ko' ? '3 · 피자 시각화' : '3 · Pizza visualisation') : t(language, 'yourPizza')}</span><InteractivePizza denominator={question.denominator} selected={selected} onToggle={toggleSlice} disabled={!workingComplete || feedback !== null || submitting} feedback={feedback} sliceLabel={t(language, 'slice')} />{feedback === 'correct' && <div className="success-stars" aria-hidden="true"><i>★</i><i>★</i><i>★</i></div>}</div>
+        <div className="pizza-stage"><span ref={pizzaGuideRef} className="workspace-label" tabIndex={workingSteps.length > 0 ? -1 : undefined}>{workingSteps.length > 0 ? (language === 'ko' ? '3 · 피자 시각화' : '3 · Pizza visualisation') : t(language, 'yourPizza')}</span><InteractivePizza denominator={question.denominator} selected={selected} onToggle={toggleSlice} disabled={!workingComplete || feedback !== null || submitting} feedback={feedback} sliceLabel={t(language, 'slice')} />{feedback === 'correct' && <div className="success-stars" aria-hidden="true"><i>★</i><i>★</i><i>★</i></div>}</div>
         <aside className="fraction-panel" aria-live="polite"><span>{t(language, 'selected')}</span><div className="large-fraction"><b>{selected.size}</b><i /><b>{question.denominator}</b></div><div className="fraction-meaning"><span><b>{selected.size}</b>{t(language, 'numerator')}</span><span><b>{question.denominator}</b>{t(language, 'denominator')}</span></div><button className="clear-button" disabled={selected.size === 0 || feedback !== null} onClick={() => setSelected(new Set())}>{t(language, 'clearSelection')}</button></aside>
       </section>
       <div className="help-row"><button className="text-button" onClick={() => setHintLevel((level) => Math.min(2, level + 1))}>💡 {hintLevel === 0 ? t(language, 'hint') : t(language, 'nextHint')}</button><button className="text-button" onClick={() => setTranslation(!translation)}>🌐 {translation ? t(language, 'closeTranslation') : t(language, 'translationHelp')}</button></div>

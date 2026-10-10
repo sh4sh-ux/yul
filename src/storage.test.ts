@@ -40,6 +40,31 @@ describe('IndexedDB learning repository', () => {
     await restoreBackup(backup)
     expect(await getProfiles()).toHaveLength(2)
   })
+  it('migrates legacy v1 difficulty values while keeping backup schema and data', async () => {
+    await initialiseProfiles()
+    const backup = await createBackup()
+    const legacy = {
+      ...backup,
+      profiles: backup.profiles.map((profile, index) => {
+        const { mathLevel: _mathLevel, adaptiveDifficulty: _adaptiveDifficulty, diagnostic: _diagnostic, ...oldProfile } = profile
+        return { ...oldProfile, difficulty: index === 0 ? 'challenge' : 'auto' }
+      }),
+    }
+    expect(validateBackup(legacy)).toBe(true)
+    await restoreBackup(legacy)
+    const profiles = await getProfiles()
+    expect(profiles.find((profile) => profile.id === 'gayul')).toMatchObject({ mathLevel: 'advanced', adaptiveDifficulty: false, xp: 0 })
+    expect(profiles.find((profile) => profile.id === 'hayul')).toMatchObject({ mathLevel: 'advanced', adaptiveDifficulty: true, xp: 0 })
+    expect((await createBackup()).version).toBe(1)
+  })
+  it('round-trips diagnostic metadata without mixing profiles', async () => {
+    const [gayul] = await initialiseProfiles()
+    await saveProfile({ ...gayul, diagnostic: { completedAt: '2026-10-10T00:00:00.000Z', score: 8, total: 10, recommendedLevel: 'expert', applied: true }, mathLevel: 'expert' })
+    const backup = await createBackup()
+    await restoreBackup(backup)
+    expect((await getProfiles()).find((profile) => profile.id === 'gayul')?.diagnostic?.recommendedLevel).toBe('expert')
+    expect((await getProfiles()).find((profile) => profile.id === 'hayul')?.diagnostic).toBeUndefined()
+  })
   it('rejects malformed backups before changing data', async () => {
     await initialiseProfiles()
     const before = await getProfiles()
@@ -51,6 +76,15 @@ describe('IndexedDB learning repository', () => {
     const before = await getProfiles()
     const backup = await createBackup()
     const malformed = { ...backup, profiles: backup.profiles.map((profile, index) => index === 0 ? { ...profile, unitDifficulties: undefined } : profile) }
+    expect(validateBackup(malformed)).toBe(false)
+    await expect(restoreBackup(malformed)).rejects.toThrow()
+    expect(await getProfiles()).toEqual(before)
+  })
+  it('rejects malformed diagnostic metadata without changing stored profiles', async () => {
+    await initialiseProfiles()
+    const before = await getProfiles()
+    const backup = await createBackup()
+    const malformed = { ...backup, profiles: backup.profiles.map((profile, index) => index === 0 ? { ...profile, diagnostic: { score: 99 } } : profile) }
     expect(validateBackup(malformed)).toBe(false)
     await expect(restoreBackup(malformed)).rejects.toThrow()
     expect(await getProfiles()).toEqual(before)

@@ -1,4 +1,4 @@
-import type { AnswerRecord, Difficulty, MathLevel, Profile } from './types'
+import type { AnswerRecord, Difficulty, MathLevel, MissionId, Profile } from './types'
 
 export const mathLevels: MathLevel[] = ['foundation', 'core', 'advanced', 'expert', 'master']
 
@@ -35,14 +35,14 @@ export function recommendedLevelFromScore(score: number, total: number): MathLev
 
 /** A single miss never lowers a level. Downward adjustment needs a full evidence window
  * including two failed supported retries; otherwise the learner receives more support. */
-export function adjustedMathLevel(current: MathLevel, history: AnswerRecord[]): MathLevel {
-  const recent = history.filter((item) => item.missionId === 'pizza').slice(-10)
+export function adjustedMathLevel(current: MathLevel, history: AnswerRecord[], missionId: MissionId = 'pizza'): MathLevel {
+  const recent = history.filter((item) => item.missionId === missionId).slice(-10)
   if (recent.length < 8) return current
   const correct = recent.filter((item) => item.correct).length
-  const lowSupportSuccess = recent.filter((item) => item.correct && item.hintsUsed <= 1).length
+  const independentSuccess = recent.filter((item) => item.correct && !item.supportAttempt && item.hintsUsed <= 1).length
   const supportedFailures = recent.filter((item) => !item.correct && item.supportAttempt).length
   const index = mathLevels.indexOf(current)
-  if (correct / recent.length >= 0.8 && lowSupportSuccess >= 6) return mathLevels[Math.min(index + 1, mathLevels.length - 1)]
+  if (correct / recent.length >= 0.8 && independentSuccess >= 6) return mathLevels[Math.min(index + 1, mathLevels.length - 1)]
   if (correct / recent.length < 0.45 && supportedFailures >= 2) return mathLevels[Math.max(index - 1, 0)]
   return current
 }

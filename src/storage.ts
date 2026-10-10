@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { mathLevels, migrateProfile } from './mathLevels'
+import { migrateProfileNames } from './profileNames'
 import type { AnswerRecord, AppBackup, MissionProgressWithProfile, Profile } from './types'
 
 interface YuliDB extends DBSchema {
@@ -32,8 +33,8 @@ const now = () => new Date().toISOString()
 export function defaultProfiles(): Profile[] {
   const createdAt = now()
   return [
-    { id: 'gayul', name: '가율', avatar: '🌿', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
-    { id: 'hayul', name: '하율', avatar: '🚀', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
+    { id: 'gayul', name: '가율', names: { ko: '가율', en: 'Helena' }, avatar: '🌿', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
+    { id: 'hayul', name: '하율', names: { ko: '하율', en: 'Luna' }, avatar: '🚀', year: null, language: 'ko', difficulty: 'advanced', mathLevel: 'advanced', adaptiveDifficulty: true, unitDifficulties: {}, xp: 0, createdAt, updatedAt: createdAt },
   ]
 }
 
@@ -45,22 +46,78 @@ export async function initialiseProfiles(): Promise<Profile[]> {
     await Promise.all([...defaultProfiles().map((profile) => transaction.store.put(profile)), transaction.done])
     profiles = await store.getAll('profiles')
   }
-  const migrated = profiles.map((profile) => migrateProfile(profile) as Profile)
+  const migrated = profiles.map((profile) => migrateProfileNames(migrateProfile(profile)) as Profile)
   const transaction = store.transaction('profiles', 'readwrite')
   await Promise.all([...migrated.map((profile) => transaction.store.put(profile)), transaction.done])
   return migrated.sort((a, b) => a.id.localeCompare(b.id))
 }
 
 export async function saveProfile(profile: Profile): Promise<void> {
-  await (await db()).put('profiles', { ...profile, updatedAt: now() })
+  await (await db()).put('profiles', { ...migrateProfileNames(profile), updatedAt: now() })
 }
 
-export async function getProfiles(): Promise<Profile[]> { return (await (await db()).getAll('profiles')).map((profile) => migrateProfile(profile) as Profile) }
+export async function getProfiles(): Promise<Profile[]> { return (await (await db()).getAll('profiles')).map((profile) => migrateProfileNames(migrateProfile(profile)) as Profile) }
 export async function getAnswers(profileId: string): Promise<AnswerRecord[]> {
   const answers = await (await db()).getAllFromIndex('answers', 'by-profile', profileId)
   return answers.sort((a, b) => a.answeredAt.localeCompare(b.answeredAt))
 }
 export async function saveAnswer(answer: AnswerRecord): Promise<void> { await (await db()).put('answers', answer) }
+
+export async function saveAnswerAndProgress(answer: AnswerRecord, progress: MissionProgressWithProfile): Promise<void> {
+  const store = await db()
+  const transaction = store.transaction(['answers', 'progress'], 'readwrite')
+  await Promise.all([
+    transaction.objectStore('answers').put(answer),
+    transaction.objectStore('progress').put({ ...progress, key: `${progress.profileId}:${progress.missionId}` } as MissionProgressWithProfile),
+  ])
+  await transaction.done
+}
+
+/**
+ * Marks a mission complete and grants its one-time reward in the same
+ * transaction. A replay can update UI state without ever granting XP twice.
+ */
+export async function completeMissionWithReward(progress: MissionProgressWithProfile, reward: number): Promise<{
+  progress: MissionProgressWithProfile
+  profile: Profile
+  xpEarned: number
+}> {
+  const store = await db()
+  const transaction = store.transaction(['profiles', 'progress'], 'readwrite')
+  const profiles = transaction.objectStore('profiles')
+  const missionProgress = transaction.objectStore('progress')
+  let profileWrite: ReturnType<typeof profiles.put> | undefined
+  try {
+    const profile = await profiles.get(progress.profileId)
+    if (!profile) throw new Error(`Profile not found: ${progress.profileId}`)
+    const key = `${progress.profileId}:${progress.missionId}`
+    const existing = await missionProgress.get(key)
+    const isFirstCompletion = !existing?.completed
+    const completedProgress = {
+      ...progress,
+      completed: true,
+      score: isFirstCompletion ? progress.score : existing.score,
+      total: isFirstCompletion ? progress.total : existing.total,
+      key,
+    } as MissionProgressWithProfile
+    const updatedProfile = isFirstCompletion
+      ? { ...profile, xp: profile.xp + reward, updatedAt: now() }
+      : profile
+
+    // Start the profile write first so any later structured-clone/storage error
+    // also proves that IndexedDB rolls the reward back with the progress write.
+    profileWrite = profiles.put(updatedProfile)
+    const progressWrite = missionProgress.put(completedProgress)
+    await Promise.all([profileWrite, progressWrite])
+    await transaction.done
+    return { progress: completedProgress, profile: updatedProfile, xpEarned: isFirstCompletion ? reward : 0 }
+  } catch (error) {
+    try { transaction.abort() } catch { /* Transaction may already be aborted. */ }
+    if (profileWrite) await Promise.allSettled([profileWrite])
+    try { await transaction.done } catch { /* Preserve the original failure. */ }
+    throw error
+  }
+}
 
 export async function getProgress(profileId: string): Promise<MissionProgressWithProfile[]> {
   return (await db()).getAllFromIndex('progress', 'by-profile', profileId)
@@ -90,6 +147,9 @@ const isProfile = (value: unknown): value is Profile => {
   const validUnits = unitDifficulties !== null && typeof unitDifficulties === 'object' && !Array.isArray(unitDifficulties)
     && Object.entries(unitDifficulties).every(([missionId, difficulty]) => validMissionIds.includes(missionId) && validDifficulties.includes(String(difficulty)))
   const diagnostic = item.diagnostic as Record<string, unknown> | undefined
+  const names = item.names as Record<string, unknown> | undefined
+  const validNames = names === undefined || (names !== null && typeof names === 'object' && !Array.isArray(names)
+    && typeof names.ko === 'string' && names.ko.trim().length > 0 && typeof names.en === 'string' && names.en.trim().length > 0)
   const validDiagnostic = diagnostic === undefined || (typeof diagnostic === 'object' && diagnostic !== null
     && typeof diagnostic.completedAt === 'string' && typeof diagnostic.score === 'number' && Number.isInteger(diagnostic.score)
     && diagnostic.score >= 0 && diagnostic.score <= 10 && diagnostic.total === 10
@@ -100,7 +160,7 @@ const isProfile = (value: unknown): value is Profile => {
     && validDifficulties.includes(String(item.difficulty)) && validUnits
     && (item.mathLevel === undefined || mathLevels.includes(item.mathLevel as Profile['mathLevel']))
     && (item.adaptiveDifficulty === undefined || typeof item.adaptiveDifficulty === 'boolean')
-    && validDiagnostic
+    && validDiagnostic && validNames
     && typeof item.xp === 'number' && Number.isFinite(item.xp) && item.xp >= 0
     && typeof item.createdAt === 'string' && typeof item.updatedAt === 'string'
 }
@@ -114,7 +174,24 @@ export function validateBackup(value: unknown): value is AppBackup {
     && typeof answer.correct === 'boolean' && typeof answer.hintsUsed === 'number'
     && (answer.objectiveId === undefined || typeof answer.objectiveId === 'string')
     && (answer.supportAttempt === undefined || typeof answer.supportAttempt === 'boolean'))
-    && item.progress.every((progress) => progress && ['gayul', 'hayul'].includes(progress.profileId) && typeof progress.completed === 'boolean')
+    && item.progress.every((progress) => {
+      if (!progress || !['gayul', 'hayul'].includes(progress.profileId) || typeof progress.completed !== 'boolean') return false
+      if (progress.missionState === undefined) return true
+      const state = progress.missionState
+      if (!state || typeof state !== 'object' || Array.isArray(state)) return false
+      const validHint = state.hintLevel === undefined || (Number.isInteger(state.hintLevel) && state.hintLevel >= 0 && state.hintLevel <= 2)
+      const validCart = state.cart === undefined || (state.cart !== null && typeof state.cart === 'object' && !Array.isArray(state.cart)
+        && Object.values(state.cart).every((quantity) => Number.isInteger(quantity) && quantity >= 0 && quantity <= 9))
+      const validAttempts = state.attemptIds === undefined || (Array.isArray(state.attemptIds)
+        && state.attemptIds.every((id) => typeof id === 'string' && id.length > 0) && new Set(state.attemptIds).size === state.attemptIds.length)
+      const validQuestions = state.questionIds === undefined || (Array.isArray(state.questionIds) && state.questionIds.length === 3
+        && state.questionIds.every((id) => typeof id === 'string' && id.startsWith('shopping-v12-')) && new Set(state.questionIds).size === state.questionIds.length)
+      const validLearningLevel = state.learningLevel === undefined || mathLevels.includes(state.learningLevel)
+      const validSupport = state.supportAttempt === undefined || typeof state.supportAttempt === 'boolean'
+      const validRun = state.runActive === undefined || typeof state.runActive === 'boolean'
+      const validPayment = state.paymentComplete === undefined || typeof state.paymentComplete === 'boolean'
+      return validHint && validCart && validAttempts && validQuestions && validLearningLevel && validSupport && validRun && validPayment
+    })
 }
 
 export async function restoreBackup(value: unknown): Promise<void> {
@@ -124,7 +201,7 @@ export async function restoreBackup(value: unknown): Promise<void> {
   await Promise.all([
     transaction.objectStore('profiles').clear(), transaction.objectStore('answers').clear(), transaction.objectStore('progress').clear(),
   ])
-  for (const profile of value.profiles) await transaction.objectStore('profiles').put(migrateProfile(profile) as Profile)
+  for (const profile of value.profiles) await transaction.objectStore('profiles').put(migrateProfileNames(migrateProfile(profile)) as Profile)
   for (const answer of value.answers) await transaction.objectStore('answers').put(answer)
   for (const progress of value.progress) await transaction.objectStore('progress').put({ ...progress, key: `${progress.profileId}:${progress.missionId}` } as MissionProgressWithProfile)
   await transaction.done

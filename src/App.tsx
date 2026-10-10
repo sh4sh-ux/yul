@@ -6,8 +6,9 @@ import { ProfilePicker } from './components/ProfilePicker'
 import { HomeScreen, MapScreen, ProgressScreen, ReviewScreen, UnavailableCard } from './components/Screens'
 import { SettingsScreen } from './components/SettingsScreen'
 import { MissionIntro, MissionResult, PizzaMission } from './components/PizzaMission'
+import { ShoppingIntro, ShoppingMission, ShoppingResult } from './components/ShoppingMission'
 import { t } from './i18n'
-import { getAnswers, getProgress, getSelectedProfile, initialiseProfiles, saveProfile, setSelectedProfile } from './storage'
+import { completeMissionWithReward, getAnswers, getProgress, getSelectedProfile, initialiseProfiles, saveProfile, setSelectedProfile } from './storage'
 import type { AnswerRecord, Language, MissionProgressWithProfile, Profile, Screen } from './types'
 
 export default function App() {
@@ -21,9 +22,11 @@ export default function App() {
   const [progress, setProgress] = useState<MissionProgressWithProfile[]>([])
   const [unavailable, setUnavailable] = useState('')
   const [loading, setLoading] = useState(true)
-  const [result, setResult] = useState<{ attempts: AnswerRecord[]; xpEarned: number } | null>(null)
+  const [result, setResult] = useState<{ missionId: 'pizza' | 'shopping'; attempts: AnswerRecord[]; xpEarned: number } | null>(null)
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null
   const pizzaProgress = progress.find((item) => item.missionId === 'pizza')
+  const shoppingProgress = progress.find((item) => item.missionId === 'shopping')
+  const shoppingRunActive = shoppingProgress?.missionState?.runActive ?? false
 
   const { needRefresh: [needRefresh, setNeedRefresh], offlineReady: [offlineReady, setOfflineReady], updateServiceWorker } = useRegisterSW()
 
@@ -58,10 +61,22 @@ export default function App() {
   }
   const updateSelected = async (profile: Profile) => { await saveProfile(profile); setProfiles((items) => items.map((item) => item.id === profile.id ? profile : item)) }
   const switchProfile = async () => { await setSelectedProfile(null); setSelectedId(null); setScreen('profiles'); setUnavailable(''); setResult(null) }
-  const completeMission = async (runAttempts: AnswerRecord[], isFirstCompletion: boolean) => {
+  const completePizzaMission = async (runAttempts: AnswerRecord[], isFirstCompletion: boolean) => {
     if (!selected) return
     if (isFirstCompletion) await updateSelected({ ...selected, xp: selected.xp + 30 })
-    await refreshData(selected.id); setResult({ attempts: runAttempts, xpEarned: isFirstCompletion ? 30 : 0 })
+    await refreshData(selected.id); setResult({ missionId: 'pizza', attempts: runAttempts, xpEarned: isFirstCompletion ? 30 : 0 })
+  }
+  const completeShoppingMission = async (runAttempts: AnswerRecord[]) => {
+    if (!selected) return
+    const completion = await completeMissionWithReward({
+      profileId: selected.id, missionId: 'shopping', completed: true, currentStep: 3,
+      score: runAttempts.filter((attempt) => attempt.correct).length, total: runAttempts.length,
+      updatedAt: new Date().toISOString(),
+      missionState: { cart: {}, hintLevel: 0, attemptIds: [], supportAttempt: false, runActive: false, paymentComplete: false },
+    }, 40)
+    setProfiles((items) => items.map((item) => item.id === completion.profile.id ? completion.profile : item))
+    await refreshData(selected.id)
+    setResult({ missionId: 'shopping', attempts: runAttempts, xpEarned: completion.xpEarned })
   }
   const restored = async () => {
     const restoredProfiles = await initialiseProfiles(); setProfiles(restoredProfiles)
@@ -71,13 +86,17 @@ export default function App() {
 
   if (loading) return <div className="loading"><img src={`${import.meta.env.BASE_URL}logo-placeholder.svg`} alt="YULI" /><span /></div>
   if (!selected) return <><ProfilePicker profiles={profiles} language={pickerLanguage} onLanguage={setPickerLanguage} onSelect={chooseProfile} onEdit={(profile) => { setEditor(profile); setEditorRequired(profile.year === null) }} />{editor && <ProfileEditor profile={editor} language={pickerLanguage} required={editorRequired} onSave={commitProfile} onCancel={() => setEditor(null)} />}</>
-  if (result) return <MissionResult profile={selected} attempts={result.attempts} xpEarned={result.xpEarned} onMap={() => { setResult(null); setScreen('map') }} onAgain={() => { setResult(null); setScreen('mission') }} />
+  if (result) return result.missionId === 'pizza'
+    ? <MissionResult profile={selected} attempts={result.attempts} xpEarned={result.xpEarned} onMap={() => { setResult(null); setScreen('map') }} onAgain={() => { setResult(null); setScreen('mission') }} />
+    : <ShoppingResult profile={selected} attempts={result.attempts} xpEarned={result.xpEarned} onMap={() => { setResult(null); setScreen('map') }} onAgain={() => { setResult(null); setScreen('shopping-mission') }} />
   if (screen === 'mission-intro') return <MissionIntro profile={selected} onBack={() => setScreen('map')} onBegin={() => setScreen('mission')} />
-  if (screen === 'mission') return <PizzaMission profile={selected} history={answers} initialStep={pizzaProgress?.completed ? 0 : pizzaProgress?.currentStep ?? 0} initialScore={pizzaProgress?.score ?? 0} initialTotal={pizzaProgress?.total ?? 3} wasCompleted={pizzaProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={completeMission} onDataChanged={() => refreshData(selected.id)} />
+  if (screen === 'mission') return <PizzaMission profile={selected} history={answers} initialStep={pizzaProgress?.completed ? 0 : pizzaProgress?.currentStep ?? 0} initialScore={pizzaProgress?.score ?? 0} initialTotal={pizzaProgress?.total ?? 3} wasCompleted={pizzaProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={completePizzaMission} onDataChanged={() => refreshData(selected.id)} />
+  if (screen === 'shopping-intro') return <ShoppingIntro profile={selected} onBack={() => setScreen('map')} onBegin={() => setScreen('shopping-mission')} />
+  if (screen === 'shopping-mission') return <ShoppingMission profile={selected} history={answers} initialStep={shoppingProgress?.completed && !shoppingRunActive ? 0 : shoppingProgress?.currentStep ?? 0} initialScore={shoppingProgress?.score ?? 0} initialTotal={shoppingProgress?.total ?? 0} initialCart={shoppingProgress?.completed && !shoppingRunActive ? {} : shoppingProgress?.missionState?.cart} initialHintLevel={shoppingProgress?.completed && !shoppingRunActive ? 0 : shoppingProgress?.missionState?.hintLevel} initialAttemptIds={shoppingProgress?.completed && !shoppingRunActive ? [] : shoppingProgress?.missionState?.attemptIds} initialQuestionIds={shoppingProgress?.completed && !shoppingRunActive ? [] : shoppingProgress?.missionState?.questionIds} initialLearningLevel={shoppingProgress?.completed && !shoppingRunActive ? undefined : shoppingProgress?.missionState?.learningLevel} initialProgressUpdatedAt={shoppingProgress?.updatedAt} initialSupportAttempt={shoppingProgress?.completed && !shoppingRunActive ? false : shoppingProgress?.missionState?.supportAttempt} initialPaymentComplete={shoppingProgress?.completed && !shoppingRunActive ? false : shoppingProgress?.missionState?.paymentComplete} wasCompleted={shoppingProgress?.completed ?? false} onExit={() => setScreen('map')} onComplete={completeShoppingMission} onDataChanged={() => refreshData(selected.id)} />
 
   return <AppShell profile={selected} screen={screen} onNavigate={(next) => { setUnavailable(''); setScreen(next) }} onSettings={() => setScreen('settings')}>
-    {screen === 'home' && <HomeScreen profile={selected} pizzaProgress={pizzaProgress} onMission={() => setScreen('mission-intro')} onMap={() => setScreen('map')} />}
-    {screen === 'map' && (unavailable ? <UnavailableCard language={selected.language} title={unavailable} onBack={() => setUnavailable('')} /> : <MapScreen language={selected.language} pizzaCompleted={pizzaProgress?.completed ?? false} onPizza={() => setScreen('mission-intro')} onUnavailable={setUnavailable} />)}
+    {screen === 'home' && <HomeScreen profile={selected} pizzaProgress={pizzaProgress} shoppingProgress={shoppingProgress} onMission={() => setScreen('mission-intro')} onShopping={() => setScreen('shopping-intro')} onMap={() => setScreen('map')} />}
+    {screen === 'map' && (unavailable ? <UnavailableCard language={selected.language} title={unavailable} onBack={() => setUnavailable('')} /> : <MapScreen language={selected.language} pizzaCompleted={pizzaProgress?.completed ?? false} shoppingCompleted={shoppingProgress?.completed ?? false} onPizza={() => setScreen('mission-intro')} onShopping={() => setScreen('shopping-intro')} onUnavailable={setUnavailable} />)}
     {screen === 'review' && <ReviewScreen language={selected.language} answers={answers} />}
     {screen === 'progress' && <ProgressScreen profile={selected} answers={answers} progress={progress} />}
     {screen === 'settings' && <SettingsScreen profile={selected} onEdit={() => { setEditor(selected); setEditorRequired(false) }} onProfileChange={updateSelected} onSwitch={switchProfile} onRestored={restored} />}

@@ -24,11 +24,28 @@ export interface MissionProgress {
   score: number
   total: number
   updatedAt: string
+  /** Optional mission UI state. Older progress and v1 backups remain valid without it. */
+  missionState?: {
+    cart?: Record<string, number>
+    hintLevel?: number
+    attemptIds?: string[]
+    /** Exact question set for a resumable run, independent of later difficulty changes. */
+    questionIds?: string[]
+    /** Learning level frozen for the current shopping run. */
+    learningLevel?: MathLevel
+    supportAttempt?: boolean
+    runActive?: boolean
+    /** A successful checkout waiting for the learner to advance. */
+    paymentComplete?: boolean
+  }
 }
 
 export interface Profile {
   id: 'gayul' | 'hayul'
+  /** Legacy Korean display name retained for v1 backup compatibility. */
   name: string
+  /** Language-specific display names. Older records are migrated on read. */
+  names?: Record<Language, string>
   avatar: string
   year: number | null
   language: Language
@@ -64,4 +81,4 @@ export interface MissionProgressWithProfile extends MissionProgress {
   profileId: string
 }
 
-export type Screen = 'profiles' | 'home' | 'map' | 'review' | 'progress' | 'settings' | 'mission-intro' | 'mission'
+export type Screen = 'profiles' | 'home' | 'map' | 'review' | 'progress' | 'settings' | 'mission-intro' | 'mission' | 'shopping-intro' | 'shopping-mission'
